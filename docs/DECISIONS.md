@@ -155,3 +155,8 @@ SDK. Supabase is being used here as "just Postgres," which is fine for v1.
   (single user, so last-write-wins is fine for v1).
 - No automated tests scaffolded yet — to be added alongside the first
   backend endpoints, not as a follow-up phase.
+- No migration runner wired up (e.g. Alembic) — `backend/migrations/*.sql`
+  are plain numbered SQL files, applied by hand via `psql "$DATABASE_URL"
+  -f backend/migrations/0001_create_notes.sql` or pasted into the Supabase
+  SQL editor. Fine at one migration; revisit if the schema starts
+  changing often.
