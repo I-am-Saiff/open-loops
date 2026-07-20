@@ -1,0 +1,42 @@
+:root {
+  --paper: #f6f1e6;
+  --paper-dark: #1c1a16;
+  --ink: #2b2620;
+  --ink-dim: #8b8375;
+  --card: #fffdf8;
+  --card-dark: #2a2620;
+  --fold: #d9d2c1;
+  --fold-dark: #3a352c;
+  --front: #fff9e8;
+  --front-dark: #33301f;
+  --accent: #c65d2e;
+  --border: #cfc6ae;
+  --border-dark: #453f33;
+
+  color-scheme: light dark;
+  font: 16px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: var(--paper-dark);
+    --ink: #ece6d8;
+    --card: var(--card-dark);
+    --fold: var(--fold-dark);
+    --front: var(--front-dark);
+    --border: var(--border-dark);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
