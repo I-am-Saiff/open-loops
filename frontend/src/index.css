@@ -1,31 +1,25 @@
 :root {
-  --paper: #f6f1e6;
-  --paper-dark: #1c1a16;
-  --ink: #2b2620;
-  --ink-dim: #8b8375;
-  --card: #fffdf8;
-  --card-dark: #2a2620;
-  --fold: #d9d2c1;
-  --fold-dark: #3a352c;
-  --front: #fff9e8;
-  --front-dark: #33301f;
-  --accent: #c65d2e;
-  --border: #cfc6ae;
-  --border-dark: #453f33;
+  --paper: #f3ecda;
+  --paper-line: #b9c9d9;
+  --paper-margin: #e0a9a2;
+  --ink: #3a3226;
+  --ink-dim: #8c8272;
+  --card: #fbf6e8;
+  --card-front: #fffcf2;
+  --fold: #e3dac2;
+  --accent: #b3502a;
+  --accent-ink: #fff8ec;
+  --border: #d8cca9;
+  --shadow-soft: 0 1px 2px rgba(60, 45, 20, 0.12), 0 4px 10px rgba(60, 45, 20, 0.1);
+  --shadow-lifted: 0 3px 6px rgba(60, 45, 20, 0.16), 0 10px 22px rgba(60, 45, 20, 0.18);
 
-  color-scheme: light dark;
-  font: 16px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --paper: var(--paper-dark);
-    --ink: #ece6d8;
-    --card: var(--card-dark);
-    --fold: var(--fold-dark);
-    --front: var(--front-dark);
-    --border: var(--border-dark);
-  }
+  /* This is deliberately not theme-aware (no prefers-color-scheme swap):
+     the whole pitch is "looks like a physical paper notebook," and paper
+     doesn't have a dark mode. See docs/DECISIONS.md. */
+  color-scheme: light;
+  color: var(--ink);
+  background: var(--paper);
+  font: 16px/1.5 Georgia, "Iowan Old Style", Palatino, "Times New Roman", serif;
 }
 
 * {

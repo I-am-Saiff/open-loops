@@ -12,11 +12,14 @@ interface Props {
 }
 
 // Deterministic small tilt per note so cards don't line up in a grid —
-// part of the "handwriting on paper" feel from docs/SPEC.md.
-function tiltForId(id: string): number {
+// part of the "handwriting on paper" feel from docs/SPEC.md. The active
+// front-facing card gets a much narrower spread than folded/done ones —
+// it reads as the one piece of paper you just set down carefully in
+// front of you, versus everything else scattered around it.
+function tiltForId(id: string, spreadDeg: number): number {
   let hash = 0;
   for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
-  return ((hash % 7) - 3) * 0.6;
+  return ((hash % 7) - 3) * (spreadDeg / 3);
 }
 
 export function NoteCard({ note, x, y, onDragStart, onCrackOpen, onComplete }: Props) {
@@ -37,6 +40,8 @@ export function NoteCard({ note, x, y, onDragStart, onCrackOpen, onComplete }: P
     .filter(Boolean)
     .join(" ");
 
+  const tilt = tiltForId(note.id, isFrontFacingChild ? 0.6 : 2.4);
+
   function submitCrackOpen() {
     const steps = stepsText
       .split("\n")
@@ -51,7 +56,7 @@ export function NoteCard({ note, x, y, onDragStart, onCrackOpen, onComplete }: P
   return (
     <div
       className={classNames}
-      style={{ left: x, top: y, "--tilt": `${tiltForId(note.id)}deg` } as React.CSSProperties}
+      style={{ left: x, top: y, "--tilt": `${tilt}deg` } as React.CSSProperties}
       onPointerDown={(e) => onDragStart(note.id, e)}
     >
       <div className="note-card__text">{note.text}</div>

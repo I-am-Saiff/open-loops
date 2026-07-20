@@ -228,6 +228,61 @@ What changed concretely:
   confirmed a leaf note going straight from folded to done via "no
   sub-steps, mark done."
 
+## 2026-07-20 — Visual identity: paper notebook, not an admin panel; ignores OS dark mode on purpose
+
+The first pass of styling (dark canvas, dot grid, flat UI-blue accents)
+read as a generic dark-mode admin dashboard, which undercuts the actual
+pitch — the point of Open Loops is that it *feels* like a physical
+notebook page, not software. Redesigned `index.css`/`App.css` around
+that:
+
+- **Always paper-toned, never dark mode.** Removed the
+  `prefers-color-scheme: dark` variant entirely and set
+  `color-scheme: light` explicitly. A physical notebook doesn't flip to
+  black plastic at night because the OS asked it to — respecting dark
+  mode here would work against the concept, not just be a missed nicety.
+- **Canvas background** is a warm cream (`--paper`) with three layered
+  cues instead of a dot grid: faint horizontal ruled lines
+  (`repeating-linear-gradient`, 34px apart), a soft red/pink vertical
+  margin line ~52px from the left (the classic legal-pad/notebook rule
+  line), and a low-opacity SVG `feTurbulence` noise texture blended over
+  everything (`mix-blend-mode: multiply`) for paper grain — all inline
+  data URIs, no image assets or network fetches, keeping the "zero setup"
+  property intact.
+- **Cards read as index cards/sticky notes, not `<div>`s:** cream
+  background a shade lighter than the page, soft multi-layer drop
+  shadows (`--shadow-soft` / `--shadow-lifted`) instead of a flat UI
+  shadow, asymmetric border-radius per corner (`2px 10px 4px 9px`) so
+  edges don't look machine-cut, and a deterministic small rotation per
+  note id (unchanged mechanism from before, `tiltForId` in
+  `NoteCard.tsx`) so cards don't line up in a grid.
+- **Status now reads visually, not just structurally:**
+  - *Folded* — dim, smaller, and gets a literal CSS dog-ear (a
+    triangular corner fold via `::after` with a diagonal gradient) so
+    "not yet opened" is legible at a glance, not just lower contrast.
+  - *Active/front-facing* — bright white-ish paper, larger padding,
+    the strongest shadow (looks lifted off the page), and — this is the
+    one behavior change beyond CSS — `tiltForId` now takes a spread
+    parameter and the front card gets a much narrower spread (±0.3°)
+    than folded/done cards (±2.4°), so it reads as "the one piece of
+    paper you just set down carefully," not just another scattered note.
+  - *Done* — reduced opacity, desaturated (`filter: saturate(0.6)`),
+    strikethrough in the accent color, i.e. pushed-aside-and-crossed-off
+    rather than merely disabled-looking.
+- **Typography:** Georgia/Palatino-family serif for UI chrome, and
+  `"Bradley Hand", "Segoe Print", "Noteworthy", cursive` for note text
+  and the page title — these are bundled with macOS (this runs on the
+  user's Mac), so no font files or web font requests, keeping the
+  offline/zero-setup property. Falls back to a generic `cursive` font on
+  platforms without them; acceptable for a local prototype, revisit if
+  this is ever deployed somewhere the OS/font environment isn't known.
+- Verified live in a real browser at each stage: folded cards (dog-ear
+  visible, dim), the crack-open panel, the bright front-facing active
+  card, dragging a completed card aside to reveal a done card underneath
+  (faded, struck through) sitting next to the ghost "in progress" tab of
+  its parent, and the final all-done state after the last step — a
+  screenshot of any of these reads as notebook paper, not a web app.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
