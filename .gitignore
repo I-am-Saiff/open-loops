@@ -8,6 +8,10 @@ backend/**/__pycache__/
 backend/.venv/
 backend/*.egg-info/
 
+# local SQLite prototype db
+backend/*.db
+backend/*.db-journal
+
 # frontend (Node)
 frontend/node_modules/
 frontend/dist/

@@ -1,3 +1,9 @@
+-- NOT applied by the current prototype. The prototype runs on local
+-- SQLite via SQLAlchemy (backend/app/models.py), created automatically
+-- on startup — no manual migration step. This file is kept as the target
+-- schema for the eventual Postgres swap once the concept is validated.
+-- See docs/DECISIONS.md ("Swap backend DB to local SQLite").
+--
 -- Open Loops v1 schema: a single self-referencing notes table.
 -- See docs/DECISIONS.md for why one table, why clock_timestamp(), and the
 -- exact state-machine rules this schema is built to support.

@@ -146,6 +146,58 @@ FastAPI is the only writer in v1 (no auth, no client-side Supabase calls),
 there's no RLS/client-auth benefit being left on the table by skipping the
 SDK. Supabase is being used here as "just Postgres," which is fine for v1.
 
+## 2026-07-20 — Swap backend DB from Postgres/Supabase to local SQLite (SQLAlchemy) for prototype validation
+
+Superseded by this entry (kept, not edited, per the log convention above):
+"Backend talks to Postgres directly, not through Supabase's PostgREST/
+client SDK."
+
+We're not committing to hosting infrastructure before the concept itself is
+validated with a collaborator. Provisioning Supabase (or any cloud DB) now
+would be infrastructure work spent before there's any confirmation the
+product idea is worth building further. SQLite via SQLAlchemy needs zero
+external accounts, is a single file (`backend/openloops.db`, gitignored),
+runs fully offline, and the FastAPI app now creates the schema itself on
+startup (`Base.metadata.create_all()`), so running the prototype is
+`pip install -r requirements.txt && uvicorn app.main:app --reload` — no
+migration step, no `.env` required.
+
+**Plan:** swap `DATABASE_URL` to a `postgresql://` connection string once
+the concept is approved and multi-user/hosting needs are real. Host
+undecided (Supabase / Neon / Railway) — that choice is deferred along with
+the swap itself. `backend/migrations/0001_create_notes.sql` is kept as the
+target schema for that swap; it is not applied by the current prototype.
+
+What changed concretely:
+- ORM: `asyncpg` (raw SQL over a connection pool) → SQLAlchemy (sync
+  engine + `Session`). The earlier reasoning for avoiding Supabase's
+  PostgREST client — needing real multi-row transactional writes for the
+  lifecycle logic — still holds and still applies: SQLAlchemy gives the
+  same direct transactional control PostgREST wouldn't. This decision is
+  only about which database engine is behind it, not about going back
+  through a REST layer.
+- IDs: Postgres `gen_random_uuid()` → `uuid.uuid4()` generated in
+  application code (SQLite has no native UUID type; ids are stored as
+  text columns that still round-trip through Pydantic's `UUID` type
+  fine).
+- Sibling ordering: Postgres `clock_timestamp()` default →
+  `datetime.utcnow()` evaluated in Python when each `Note` object is
+  constructed. SQLAlchemy ORM objects for a crack-open's sub-steps are
+  still constructed one at a time in a Python loop even inside one
+  transaction, so `created_at` still advances per row the same way. Same
+  caveat as before: relies on the system clock's resolution being fine
+  enough not to collide for manually-typed sub-steps at v1 scale — true
+  in practice, not formally guaranteed.
+- Foreign keys: SQLite does not enforce `ON DELETE CASCADE` (or any FK
+  constraint) unless `PRAGMA foreign_keys=ON` is set per connection —
+  added as a `connect` event listener on the engine in `app/db.py`. This
+  listener is SQLite-specific and will need to be removed when swapping
+  to Postgres.
+- Endpoints changed from `async def` (asyncpg) to plain `def` (SQLAlchemy
+  sync `Session`) — FastAPI runs sync route functions in a threadpool
+  automatically, so this doesn't block the event loop and needed no
+  other changes.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
@@ -155,16 +207,14 @@ SDK. Supabase is being used here as "just Postgres," which is fine for v1.
   (single user, so last-write-wins is fine for v1).
 - No automated tests scaffolded yet — to be added alongside the first
   backend endpoints, not as a follow-up phase.
-- No migration runner wired up (e.g. Alembic) — `backend/migrations/*.sql`
-  are plain numbered SQL files, applied by hand via `psql "$DATABASE_URL"
-  -f backend/migrations/0001_create_notes.sql` or pasted into the Supabase
-  SQL editor. Fine at one migration; revisit if the schema starts
-  changing often.
-- `POST /notes` has only been verified by importing the FastAPI app and
-  confirming the route registers (this dev machine has no local Postgres
-  and no Supabase project is provisioned yet). Not yet exercised against
-  a real database — do that as soon as `DATABASE_URL` points at an actual
-  Postgres/Supabase instance, before building further on top of it.
+- No migration tooling for the SQLite prototype — the schema is created
+  automatically by SQLAlchemy on startup. `backend/migrations/0001_create_notes.sql`
+  is kept only as the target Postgres schema for the later swap and is not
+  run today.
+- SQLite's `PRAGMA foreign_keys=ON` listener in `app/db.py` is
+  SQLite-specific and must be removed (not just left dormant) when
+  swapping to Postgres, since it would error against a non-SQLite
+  connection.
 - Dev machine only has Python 3.9 (no 3.10+ available), so backend code
   uses `typing.Optional`/`Union` instead of PEP 604 `X | None` syntax for
   compatibility. Revisit if the deploy target is confirmed to run 3.10+.

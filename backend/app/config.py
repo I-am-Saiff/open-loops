@@ -4,7 +4,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file="../.env", extra="ignore")
 
-    database_url: str
+    # Local SQLite by default — zero setup needed to run the prototype.
+    # See docs/DECISIONS.md for the plan to swap this to Postgres later.
+    database_url: str = "sqlite:///./openloops.db"
 
 
 settings = Settings()
