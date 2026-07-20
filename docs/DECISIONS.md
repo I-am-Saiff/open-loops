@@ -160,3 +160,11 @@ SDK. Supabase is being used here as "just Postgres," which is fine for v1.
   -f backend/migrations/0001_create_notes.sql` or pasted into the Supabase
   SQL editor. Fine at one migration; revisit if the schema starts
   changing often.
+- `POST /notes` has only been verified by importing the FastAPI app and
+  confirming the route registers (this dev machine has no local Postgres
+  and no Supabase project is provisioned yet). Not yet exercised against
+  a real database — do that as soon as `DATABASE_URL` points at an actual
+  Postgres/Supabase instance, before building further on top of it.
+- Dev machine only has Python 3.9 (no 3.10+ available), so backend code
+  uses `typing.Optional`/`Union` instead of PEP 604 `X | None` syntax for
+  compatibility. Revisit if the deploy target is confirmed to run 3.10+.

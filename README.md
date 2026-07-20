@@ -32,5 +32,17 @@ sub-step entry only (see `docs/SPEC.md` Phase 2 for AI-assisted breakdown).
 
 ## Setup
 
-Not yet scaffolded — backend and frontend setup instructions will land here
-as each is built out.
+### Backend
+
+```
+cd backend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp ../.env.example ../.env   # fill in DATABASE_URL (Supabase Postgres)
+psql "$DATABASE_URL" -f migrations/0001_create_notes.sql
+uvicorn app.main:app --reload
+```
+
+### Frontend
+
+Not yet scaffolded.
