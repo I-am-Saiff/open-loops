@@ -198,13 +198,45 @@ What changed concretely:
   automatically, so this doesn't block the event loop and needed no
   other changes.
 
+## 2026-07-20 — Frontend implementation notes: TypeScript, CORS, and client-only drag
+
+- **TypeScript**, not plain JS, for the Vite + React app (`npm create
+  vite@latest -- --template react-ts`). Not separately justified when the
+  Vite-vs-Next.js choice was logged earlier — noting it now because the
+  frontend's `src/types.ts` (`Note`, `CrackOpenResponse`,
+  `CompleteResponse`) is a hand-kept mirror of the FastAPI Pydantic
+  schemas, and TypeScript is what makes that mirror catch drift (e.g. a
+  renamed field) at compile time instead of silently at runtime.
+- **CORS is wide open** (`allow_origins=["*"]` in `app/main.py`) since
+  this is a single-user local prototype with no auth and nothing to
+  protect cross-origin. Revisit before this ever leaves localhost.
+- **Drag positions are session-local only, not persisted.** There is no
+  endpoint yet to write an updated `x`/`y` back to a note (see the
+  existing open item below on optimistic locking, which anticipated
+  this). The canvas keeps a `positions` map in React state that overrides
+  a note's fetched `x`/`y` once dragged, so dragging feels persistent
+  within a session, but a page reload resets every note to its
+  last-saved (crack-open-time) position. This was a deliberate scope cut
+  to build the fog-of-war interaction loop first, per your instruction —
+  a `PATCH /notes/{id}/position` (or folding position into a general
+  `PATCH /notes/{id}`) is the natural next backend endpoint.
+- Verified live in a real browser (not just curl): created a loop,
+  cracked it into 4 steps, completed all 4 one at a time and watched the
+  fog-of-war reveal match the API exactly (only ever one large
+  front-facing card, parent auto-completed on the last step with no
+  active card left), dragged a completed card to a new position, and
+  confirmed a leaf note going straight from folded to done via "no
+  sub-steps, mark done."
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
   concept. Do not add a `users` table or auth middleware for v1 — explicitly
   deferred, not an oversight.
-- No optimistic-locking / conflict handling on drag position updates
-  (single user, so last-write-wins is fine for v1).
+- No endpoint to persist a note's position after a drag — see the
+  frontend notes entry above. Positions are session-local in the browser
+  only. When this is built: no optimistic-locking / conflict handling
+  needed (single user, so last-write-wins is fine for v1).
 - No automated tests scaffolded yet — to be added alongside the first
   backend endpoints, not as a follow-up phase.
 - No migration tooling for the SQLite prototype — the schema is created

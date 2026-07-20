@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { createNote, listNotes } from "./api";
+import { completeNote, crackOpen, createNote, listNotes } from "./api";
 import { NewNoteInput } from "./NewNoteInput";
 import { NoteCard } from "./NoteCard";
 import type { Note } from "./types";
@@ -97,6 +97,24 @@ export default function App() {
     }
   }
 
+  async function handleCrackOpen(id: string, steps: string[]) {
+    try {
+      await crackOpen(id, steps);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function handleComplete(id: string) {
+    try {
+      await completeNote(id);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
   return (
     <div className="app">
       <header className="app__header">
@@ -114,7 +132,15 @@ export default function App() {
         {notes.map((note) => {
           const pos = positions[note.id] ?? { x: note.x, y: note.y };
           return (
-            <NoteCard key={note.id} note={note} x={pos.x} y={pos.y} onDragStart={handleDragStart} />
+            <NoteCard
+              key={note.id}
+              note={note}
+              x={pos.x}
+              y={pos.y}
+              onDragStart={handleDragStart}
+              onCrackOpen={handleCrackOpen}
+              onComplete={handleComplete}
+            />
           );
         })}
 

@@ -9,3 +9,14 @@ export interface Note {
   status: NoteStatus;
   created_at: string;
 }
+
+export interface CrackOpenResponse {
+  parent: Note;
+  active_child: Note;
+}
+
+export interface CompleteResponse {
+  note: Note;
+  promoted_sibling: Note | null;
+  parent: Note | null;
+}

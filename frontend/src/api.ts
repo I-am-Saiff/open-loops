@@ -1,4 +1,4 @@
-import type { Note } from "./types";
+import type { CompleteResponse, CrackOpenResponse, Note } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -27,5 +27,18 @@ export function createNote(input: {
   return request<Note>("/notes", {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export function crackOpen(id: string, steps: string[]): Promise<CrackOpenResponse> {
+  return request<CrackOpenResponse>(`/notes/${id}/crack-open`, {
+    method: "PATCH",
+    body: JSON.stringify({ steps }),
+  });
+}
+
+export function completeNote(id: string): Promise<CompleteResponse> {
+  return request<CompleteResponse>(`/notes/${id}/complete`, {
+    method: "PATCH",
   });
 }
