@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class NoteCreate(BaseModel):
@@ -20,3 +20,14 @@ class NoteOut(BaseModel):
     y: float
     status: str
     created_at: datetime
+
+
+class CrackOpenRequest(BaseModel):
+    # Ordered sub-step texts — list order decides which one becomes the
+    # front-facing 'active' step first. See docs/DECISIONS.md.
+    steps: List[str] = Field(min_length=1)
+
+
+class CrackOpenResponse(BaseModel):
+    parent: NoteOut
+    active_child: NoteOut
