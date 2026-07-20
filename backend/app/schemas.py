@@ -31,3 +31,13 @@ class CrackOpenRequest(BaseModel):
 class CrackOpenResponse(BaseModel):
     parent: NoteOut
     active_child: NoteOut
+
+
+class CompleteResponse(BaseModel):
+    note: NoteOut
+    # The sibling promoted to 'active' as a result, if any.
+    promoted_sibling: Optional[NoteOut] = None
+    # The immediate parent's current state, if this note had one — may
+    # still be 'active' (a sibling was promoted) or now 'done' (this was
+    # the last child). See docs/DECISIONS.md for the transition rule.
+    parent: Optional[NoteOut] = None

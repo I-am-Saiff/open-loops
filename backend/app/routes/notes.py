@@ -7,7 +7,13 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Note, NoteStatus
-from app.schemas import CrackOpenRequest, CrackOpenResponse, NoteCreate, NoteOut
+from app.schemas import (
+    CompleteResponse,
+    CrackOpenRequest,
+    CrackOpenResponse,
+    NoteCreate,
+    NoteOut,
+)
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -110,3 +116,84 @@ def crack_open(
     db.refresh(children[0])
 
     return CrackOpenResponse(parent=_to_out(note), active_child=_to_out(children[0]))
+
+
+def _promote_next_sibling_or_complete_parent(db: Session, parent: Note):
+    """Called right after one of `parent`'s children was just flushed to
+    'done'. Promotes the next 'folded' sibling (created_at order) to
+    'active', or — if none remain — marks `parent` itself 'done' and
+    recurses one level up. Returns the promoted sibling Note, or None if
+    the parent completed instead. See docs/DECISIONS.md ("State machine:
+    exact transition rules").
+    """
+    next_sibling = (
+        db.query(Note)
+        .filter(Note.parent_id == parent.id, Note.status == NoteStatus.folded)
+        .order_by(Note.created_at.asc())
+        .first()
+    )
+    if next_sibling is not None:
+        next_sibling.status = NoteStatus.active
+        db.flush()
+        return next_sibling
+
+    remaining = (
+        db.query(Note.id)
+        .filter(Note.parent_id == parent.id, Note.status != NoteStatus.done)
+        .first()
+    )
+    if remaining is None:
+        parent.status = NoteStatus.done
+        db.flush()
+        if parent.parent_id is not None:
+            grandparent = db.get(Note, parent.parent_id)
+            _promote_next_sibling_or_complete_parent(db, grandparent)
+    return None
+
+
+@router.patch("/{note_id}/complete", response_model=CompleteResponse)
+def complete_note(note_id: UUID, db: Session = Depends(get_db)) -> CompleteResponse:
+    note = db.get(Note, str(note_id))
+    if note is None:
+        raise HTTPException(status_code=404, detail="note not found")
+    if note.status == NoteStatus.done:
+        raise HTTPException(status_code=400, detail="note already done")
+
+    # A note can't be completed directly while it still has pending
+    # (non-done) sub-steps — otherwise completing a parent would bypass
+    # its children's fog-of-war progression entirely. This also covers
+    # the "folded parent with children" case, which shouldn't occur under
+    # the current invariants (crack-open flips the parent to 'active'
+    # immediately) but is guarded defensively.
+    pending_children = (
+        db.query(Note.id)
+        .filter(Note.parent_id == note.id, Note.status != NoteStatus.done)
+        .first()
+    )
+    if pending_children is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="note has pending sub-steps and cannot be completed directly",
+        )
+
+    note.status = NoteStatus.done
+    db.flush()  # so the sibling/parent queries below see this note as done
+
+    promoted_sibling = None
+    parent = None
+    if note.parent_id is not None:
+        parent = db.get(Note, note.parent_id)
+        promoted_sibling = _promote_next_sibling_or_complete_parent(db, parent)
+
+    db.commit()
+    db.refresh(note)
+    if promoted_sibling is not None:
+        db.refresh(promoted_sibling)
+    if parent is not None:
+        db.refresh(parent)
+
+    return CompleteResponse(
+        note=_to_out(note),
+        promoted_sibling=_to_out(promoted_sibling) if promoted_sibling else None,
+        parent=_to_out(parent) if parent is not None else None,
+    )
