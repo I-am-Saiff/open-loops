@@ -13,6 +13,12 @@
   --shadow-soft: 0 1px 2px rgba(60, 45, 20, 0.12), 0 4px 10px rgba(60, 45, 20, 0.1);
   --shadow-lifted: 0 3px 6px rgba(60, 45, 20, 0.16), 0 10px 22px rgba(60, 45, 20, 0.18);
 
+  /* A different paper color for the Feature B "stale" sticky note — it
+     needs to visibly read as something else stuck onto the card, not
+     part of it. */
+  --stale-paper: #f6dfa0;
+  --stale-border: #cf9f3f;
+
   /* This is deliberately not theme-aware (no prefers-color-scheme swap):
      the whole pitch is "looks like a physical paper notebook," and paper
      doesn't have a dark mode. See docs/DECISIONS.md. */

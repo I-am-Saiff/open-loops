@@ -457,6 +457,55 @@ because a child had been completed; `DELETE`d a note with two children
 parent *and both children* were gone, not just hidden; confirmed 404 on
 all three new endpoints for a nonexistent note.
 
+## 2026-07-22 — Feature B frontend: stale prompt is a second sticky note, dissolve delays the real delete until the animation finishes
+
+`StaleNotePrompt` renders as its own absolutely-positioned element inside
+the folded card's box (`.note-card` is already `position: absolute`, so
+it's a valid containing block for this without extra markup), offset
+down-and-right (`top: calc(100% - 10px); left: 14px;`) rather than
+centered on top of the card. First attempt centered it over the card and
+it completely hid the note's own text — moving it to overlap just the
+bottom-left corner keeps both legible at once, closer to "a sticky note
+attached to it" than "a sticky note replacing it."
+
+Priority for what a folded top-level card shows is now: decompose
+proposal (Feature A) > stale prompt > manual crack-open panel > plain
+"open" link — a card only ever shows one of these at a time. In
+practice the first two never actually contend (a note can't be stale
+seconds after being created, which is the only time a decompose
+proposal exists), but the ordering is there for correctness regardless.
+
+Peek is fired from exactly one place: the "open" link's click handler
+(`openManually` in `NoteCard.tsx`), which calls `onPeek` alongside
+toggling the panel — matching the spec's "opened/viewed... not when
+steps are completed." Nothing else in the UI calls peek.
+
+Dissolve: `NoteCard` owns a local `dissolving` boolean and a
+`setTimeout` — clicking "let it go" immediately adds the
+`.note-card--dissolving` class (CSS keyframes: rotate further + scale
+to 0.15 + fade over 450ms) but only calls the parent's `onDissolve` (the
+actual `DELETE` request) once that timer fires. The note stays in
+`notes` state, animating, for the full 450ms; only after does the
+parent's `refresh()` actually remove it. Getting this order backwards
+(deleting first, animating second) would either animate a card that's
+already gone from state (nothing to animate) or need the deleted note
+kept around client-side in a separate "removing" list — the setTimeout
+approach avoids that bookkeeping entirely at the cost of one hardcoded
+duration constant that has to stay in sync between the `.tsx` and the
+`@keyframes` (`DISSOLVE_ANIMATION_MS` in `NoteCard.tsx`, `450ms` in
+`App.css` — both commented to point at each other).
+
+Verified live in the browser: peeked a note 3x via real UI clicks on
+"open," backdated it via SQL, reloaded — the stale sticky note appeared
+attached to the (still-legible) folded card underneath; "keep it"
+dismissed it and reset `peek_count` to 0 (confirmed via the API); re-peeked
+and re-backdated to bring it back; "let it go" removed the note from the
+canvas and a direct SQLite read confirmed 0 rows remained (an actual
+delete, not a status flip); separately confirmed a plain "open" click on
+a fresh note incremented `peek_count` to 1 with `last_peeked_at` set, via
+a direct SQLite read after the UI interaction. No console errors at any
+point.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user

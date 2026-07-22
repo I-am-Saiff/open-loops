@@ -390,3 +390,80 @@
   opacity: 0.4;
   box-shadow: none;
 }
+
+/* ---------- stale note prompt (Feature B) ---------- */
+
+/* Offset down-and-right so it overlaps only the lower corner of the
+   folded card — the original note (and its text) stays visible above
+   it, like a sticky note stuck onto the bottom of a bigger card. */
+.stale-prompt {
+  position: absolute;
+  top: calc(100% - 10px);
+  left: 14px;
+  z-index: 5;
+  width: 180px;
+  padding: 10px 12px;
+  background: var(--stale-paper);
+  border: 1px solid var(--stale-border);
+  border-radius: 2px 8px 2px 8px;
+  box-shadow: var(--shadow-lifted);
+  transform: rotate(4deg);
+}
+
+.stale-prompt__text {
+  margin: 0 0 8px;
+  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-size: 15px;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.stale-prompt__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stale-prompt__actions button:first-child {
+  border: none;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 3px 8px 3px 8px;
+  padding: 5px 10px;
+  font-family: Georgia, serif;
+  font-size: 12px;
+  font-weight: bold;
+  box-shadow: var(--shadow-soft);
+}
+
+.stale-prompt__let-go {
+  border: none;
+  background: transparent;
+  color: var(--ink-dim);
+  font-family: Georgia, serif;
+  font-size: 12px;
+  text-decoration: underline;
+  padding: 0;
+}
+
+/* ---------- dissolve (Feature B "let it go") ---------- */
+/* Duration mirrored in NoteCard.tsx's DISSOLVE_ANIMATION_MS — the actual
+   delete is deferred until this finishes playing, like tearing out a
+   page before it's gone for good. */
+
+.note-card--dissolving {
+  animation: dissolve 450ms ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes dissolve {
+  0% {
+    transform: rotate(var(--tilt, 0deg)) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(calc(var(--tilt, 0deg) + 35deg)) scale(0.15);
+    opacity: 0;
+  }
+}

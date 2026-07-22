@@ -8,6 +8,7 @@ export interface Note {
   y: number;
   status: NoteStatus;
   created_at: string;
+  stale: boolean;
 }
 
 export interface CrackOpenResponse {

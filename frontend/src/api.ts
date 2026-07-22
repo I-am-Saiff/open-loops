@@ -48,3 +48,21 @@ export function decompose(id: string): Promise<DecomposeProposal> {
     method: "POST",
   });
 }
+
+export function peekNote(id: string): Promise<Note> {
+  return request<Note>(`/notes/${id}/peek`, { method: "PATCH" });
+}
+
+export function keepNote(id: string): Promise<Note> {
+  return request<Note>(`/notes/${id}/keep`, { method: "PATCH" });
+}
+
+// Not routed through request<T> — DELETE returns 204 with no body, and
+// request<T> always calls res.json(), which would throw on an empty body.
+export async function dissolveNote(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/notes/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail ?? `${res.status} ${res.statusText}`);
+  }
+}

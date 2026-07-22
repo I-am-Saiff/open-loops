@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { completeNote, crackOpen, createNote, decompose, listNotes } from "./api";
+import {
+  completeNote,
+  crackOpen,
+  createNote,
+  decompose,
+  dissolveNote,
+  keepNote,
+  listNotes,
+  peekNote,
+} from "./api";
 import { NewNoteInput } from "./NewNoteInput";
 import { NoteCard } from "./NoteCard";
 import type { DecomposeProposal, Note } from "./types";
@@ -153,6 +162,36 @@ export default function App() {
     await handleComplete(id);
   }
 
+  // Feature B: avoidance memory.
+  async function handlePeek(id: string) {
+    try {
+      await peekNote(id);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function handleKeep(id: string) {
+    try {
+      await keepNote(id);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  // Called only after NoteCard's crumple animation finishes playing —
+  // this is the actual, irreversible delete. See docs/DECISIONS.md.
+  async function handleDissolve(id: string) {
+    try {
+      await dissolveNote(id);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
   return (
     <div className="app">
       <header className="app__header">
@@ -182,6 +221,9 @@ export default function App() {
               onConfirmProposal={handleConfirmProposal}
               onDismissProposal={dismissProposal}
               onAcceptDissolve={handleAcceptDissolve}
+              onPeek={handlePeek}
+              onKeep={handleKeep}
+              onDissolve={handleDissolve}
             />
           );
         })}

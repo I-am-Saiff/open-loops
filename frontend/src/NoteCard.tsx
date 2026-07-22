@@ -1,7 +1,13 @@
 import { useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { DecomposeProposalPanel } from "./DecomposeProposalPanel";
+import { StaleNotePrompt } from "./StaleNotePrompt";
 import type { DecomposeProposal, Note } from "./types";
+
+// Matches the CSS --dissolve-duration below — the actual DELETE call
+// (and the note leaving state) is deferred until the crumple animation
+// finishes playing. See docs/DECISIONS.md ("Feature B").
+const DISSOLVE_ANIMATION_MS = 450;
 
 interface Props {
   note: Note;
@@ -17,6 +23,10 @@ interface Props {
   onConfirmProposal: (id: string, steps: string[]) => void;
   onDismissProposal: (id: string) => void;
   onAcceptDissolve: (id: string) => void;
+  // Feature B: avoidance memory.
+  onPeek: (id: string) => void;
+  onKeep: (id: string) => void;
+  onDissolve: (id: string) => void;
 }
 
 // Deterministic small tilt per note so cards don't line up in a grid —
@@ -41,18 +51,33 @@ export function NoteCard({
   onConfirmProposal,
   onDismissProposal,
   onAcceptDissolve,
+  onPeek,
+  onKeep,
+  onDissolve,
 }: Props) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [stepsText, setStepsText] = useState("");
+  const [dissolving, setDissolving] = useState(false);
 
   const isTopLevel = note.parent_id === null;
   const isChild = !isTopLevel;
   const isFrontFacingChild = isChild && note.status === "active";
   const showDecomposePanel = isTopLevel && note.status === "folded" && proposal !== undefined;
+  const showStalePrompt = isTopLevel && note.status === "folded" && note.stale && !showDecomposePanel;
 
   function useManualEntry() {
     onDismissProposal(note.id);
     setPanelOpen(true);
+  }
+
+  function openManually() {
+    onPeek(note.id);
+    setPanelOpen((open) => !open);
+  }
+
+  function handleLetGo() {
+    setDissolving(true);
+    window.setTimeout(() => onDissolve(note.id), DISSOLVE_ANIMATION_MS);
   }
 
   const isExpanded = panelOpen || showDecomposePanel;
@@ -64,6 +89,7 @@ export function NoteCard({
     isFrontFacingChild && "note-card--front",
     isTopLevel && note.status === "active" && "note-card--in-progress",
     isExpanded && "note-card--expanded",
+    dissolving && "note-card--dissolving",
   ]
     .filter(Boolean)
     .join(" ");
@@ -89,12 +115,12 @@ export function NoteCard({
     >
       <div className="note-card__text">{note.text}</div>
 
-      {isTopLevel && note.status === "folded" && !showDecomposePanel && (
+      {isTopLevel && note.status === "folded" && !showDecomposePanel && !showStalePrompt && (
         <button
           type="button"
           className="note-card__action"
           onPointerDown={(e) => e.stopPropagation()}
-          onClick={() => setPanelOpen((open) => !open)}
+          onClick={openManually}
         >
           {panelOpen ? "cancel" : "open"}
         </button>
@@ -109,7 +135,11 @@ export function NoteCard({
         />
       )}
 
-      {!showDecomposePanel && panelOpen && (
+      {showStalePrompt && (
+        <StaleNotePrompt onKeep={() => onKeep(note.id)} onLetGo={handleLetGo} />
+      )}
+
+      {!showDecomposePanel && !showStalePrompt && panelOpen && (
         <div className="crack-open-panel" onPointerDown={(e) => e.stopPropagation()}>
           <textarea
             autoFocus
