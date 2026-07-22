@@ -283,6 +283,48 @@ that:
   its parent, and the final all-done state after the last step — a
   screenshot of any of these reads as notebook paper, not a web app.
 
+## 2026-07-22 — LLM provider: Groq, abstracted behind a single `complete_json()` function
+
+Chose Groq for Features A (decompose) and C (cross-loop merge detection)
+over OpenAI/Anthropic: free tier at prototype scale, fast inference (low
+latency matters here since decompose runs synchronously in the create-loop
+flow, blocking the UI on a response), and Groq's API is OpenAI-compatible
+(`/openai/v1/chat/completions`) so `response_format: {"type":
+"json_object"}` JSON mode works exactly like it does elsewhere — no
+custom prompt-and-hope parsing.
+
+All provider-specific detail (endpoint URL, auth header shape, model
+name, request/response shape) lives in `backend/app/llm_client.py`'s one
+function, `complete_json(system_prompt, user_prompt) -> dict`. Every
+caller (decompose, merge detection) only ever sees "give it a system
+prompt and a user prompt, get a dict back, or an `LLMError`." Swapping to
+a different provider later means rewriting this one file; nothing in
+`routes/notes.py` would need to change.
+
+Model: `llama-3.3-70b-versatile` — good balance of JSON-following
+reliability and speed on Groq's free tier for this use case (short
+structured outputs, not long-form generation). Hardcoded as a module
+constant rather than an env var for now since there's only one call site
+shape (system+user prompt in, JSON dict out); revisit if different
+features end up needing different models/temperatures.
+
+Error handling: `complete_json()` catches `requests` network/HTTP errors,
+missing-key `KeyError`/`IndexError` (malformed Groq response shape), and
+`json.JSONDecodeError` (model didn't return valid JSON despite JSON mode)
+and re-raises all of them as one `LLMError`. This is a genuine system
+boundary — the LLM is an external, occasionally-unreliable dependency —
+so unlike most of this codebase's "don't validate what can't happen"
+posture, catching failures here is deliberate, not defensive
+overengineering.
+
+`GROQ_API_KEY` defaults to `""` in `Settings` so the app still starts
+without one; the failure only surfaces when a decompose/merge call
+actually runs, which is the right place for it to surface.
+
+Verified live: `complete_json()` called directly against the real Groq
+API (not mocked) with a trivial prompt, confirmed it returns a parsed
+dict from the model's JSON response.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
