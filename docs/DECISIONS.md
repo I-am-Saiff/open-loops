@@ -506,6 +506,107 @@ a fresh note incremented `peek_count` to 1 with `last_peeked_at` set, via
 a direct SQLite read after the UI interaction. No console errors at any
 point.
 
+## 2026-07-22 — Feature C backend: merge detection, linking, and the completion cascade
+
+**Detection runs inside `decompose`, only for `steps` proposals**, as a
+second, separate LLM call (`_find_merge_suggestion`) rather than one
+combined call — keeping two independent structured-output shapes
+(decompose's `type`-discriminated union, merge's `match`-discriminated
+union) in a single prompt/response felt more likely to degrade JSON
+reliability than the cost of a second round-trip. Skipped entirely (no
+LLM call at all) if there are no other top-level loops with
+`status == active` — no candidates, nothing to ask.
+
+**Compares against folded steps too, not just each other loop's one
+visible active step.** This is a deliberate trade against the fog-of-war
+principle elsewhere in the app: the backend already has full visibility
+into every row regardless of status, and restricting merge candidates to
+only the currently-active step of each other loop would make the
+feature nearly useless (at most one visible step per loop at any time).
+The user-facing consequence is that accepting a merge can surface the
+literal text of a step in another loop that hasn't been "opened" by that
+loop's own fog-of-war progression yet. Treating this as acceptable
+because Feature C is explicitly a cross-loop bridge the user opted into
+(by confirming a decompose proposal), not a silent leak — fog-of-war
+is about pacing avoidance within one loop, not about the backend
+withholding data from itself.
+
+**Not built to scale past a handful of loops**, per your instruction:
+`_find_merge_suggestion` loads *all* pending steps from *all* other
+active loops into one prompt every time `decompose` runs. Fine at demo
+scale (a handful of loops, a few steps each); would need pagination/
+embedding-based pre-filtering before comparing against hundreds of
+loops so the prompt doesn't blow past context limits or become
+unreliable for the LLM to scan.
+
+**Validation against the real candidate set, not just JSON-shape
+validation**: `_find_merge_suggestion` checks the LLM's `new_step` is
+literally one of the proposed steps and `(existing_note_id,
+existing_step)` is literally one of the real candidate pairs it was
+given, before ever constructing a `MergeSuggestion`. Any mismatch (a
+paraphrase, an invented id) silently means no suggestion rather than
+surfacing a suggestion that doesn't correspond to real data — same "fail
+safe, don't break the primary flow" posture as `LLMError` handling
+throughout this feature.
+
+**`PATCH /notes/{id}/link` is symmetric** (sets `linked_note_id` on both
+notes) since the cascade needs to work from either side — whichever one
+gets completed first. Guards: can't link a note to itself, can't link an
+already-done note (nothing to cascade), can't link a note that's already
+linked (no multi-way links in v1, keeps the cascade a simple pairwise
+check).
+
+**The completion cascade only fires if the linked note is currently
+`active`** — i.e., genuinely that note's own turn in its own loop's
+fog-of-war sequence — not merely "not done." This was a real bug caught
+during live testing, not a hypothetical: my first pass cascaded whenever
+the linked note was `!= done`, which meant linking an active step to a
+*folded* one (very plausible — a merge match can land on any pending
+step, and only one step per loop is ever active) would force-complete a
+step out of turn, promoting a second sibling to `active` in that loop
+and violating the one-active-child invariant that everything else in
+this app depends on. Fixed by requiring `linked.status ==
+NoteStatus.active`. **Known limitation** (explicitly not built out
+further, matching "keep this to exact/small-scale... note the
+limitation"): if you link a step before its own turn arrives, completing
+its counterpart elsewhere does *not* retroactively auto-complete it once
+its turn does come up naturally — it just sits `active`, still linked to
+an already-`done` note, until someone completes it manually. Fixing this
+properly would mean `_promote_next_sibling_or_complete_parent` checking,
+every time it promotes a sibling to `active`, whether that sibling is
+linked to an already-done note and immediately cascading — deferred as
+added complexity not justified at demo scale.
+
+Verified live against real SQLite and the real Groq API, using two
+manually-seeded loops sharing a genuine real-world action (\"go grocery
+shopping for rice and spices\") so the LLM's judgment could be checked
+directly rather than mocked: two earlier attempts with more loosely
+related tasks (lasagna/cake vs. a specific biryani grocery run)
+correctly returned no match — confirming the model does discriminate
+real overlap from superficial similarity, not just rubber-stamp
+everything. A task text engineered to need the literal same shopping
+trip did trigger a match, with `new_step`/`existing_note_id`/
+`existing_step` all verified to be the exact real values. Cracked that
+proposal open, linked the new step to the existing one, and:
+- linking an **active** note to a **folded** one, then completing the
+  active side, correctly left the folded (linked) side untouched — no
+  invariant violation, confirmed via direct SQLite read of all of that
+  loop's children;
+- linking two notes that were **both** currently active, then completing
+  one, correctly cascaded: the linked note in the other loop flipped to
+  `done` *and* that loop's own next sibling was promoted to `active` in
+  the same operation — confirmed via direct SQLite read that both loops
+  ended up with exactly one `active` child each, "both parents get
+  credit" holding exactly as specified;
+- confirmed the documented limitation directly: the note linked while
+  folded, once later promoted to `active` by its own loop's normal
+  sequence, stayed `active` rather than auto-completing, despite its
+  linked counterpart already being `done`;
+- all four `link` guard rails (self-link, link-to-done, double-link,
+  missing note) returned the expected 400/404;
+- confirmed `decompose` with zero other active loops in the database
+  skips the merge LLM call entirely and returns `merge_suggestion: null`.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
@@ -528,3 +629,10 @@ point.
 - Dev machine only has Python 3.9 (no 3.10+ available), so backend code
   uses `typing.Optional`/`Union` instead of PEP 604 `X | None` syntax for
   compatibility. Revisit if the deploy target is confirmed to run 3.10+.
+- Feature C merge detection is O(all other active loops' pending steps)
+  per `decompose` call — fine at demo scale, would need pre-filtering
+  before it scales to hundreds of loops.
+- Feature C's completion cascade only fires when the linked note is
+  already `active`. Linking a step before its own turn comes up does not
+  retroactively auto-complete it once that turn arrives naturally — see
+  the dedicated entry above for why and what a full fix would need.

@@ -22,6 +22,8 @@ class NoteOut(BaseModel):
     created_at: datetime
     # Feature B: computed, not stored — see docs/DECISIONS.md.
     stale: bool
+    # Feature C: set by PATCH /notes/{id}/link — see docs/DECISIONS.md.
+    linked_note_id: Optional[UUID]
 
 
 class CrackOpenRequest(BaseModel):
@@ -45,13 +47,27 @@ class CompleteResponse(BaseModel):
     parent: Optional[NoteOut] = None
 
 
+# Feature C: cross-loop merge. Detected as part of decompose (below), only
+# ever describing a NEW proposed step (not yet a real note) matched
+# against a real pending step of some other loop. See docs/DECISIONS.md.
+class MergeSuggestion(BaseModel):
+    new_step: str
+    existing_note_id: UUID
+    existing_step: str
+
+
 # Feature A: LLM-proposed decomposition. A preview only — decompose never
 # creates notes itself, see docs/DECISIONS.md.
 class DecomposeStepsProposal(BaseModel):
     type: Literal["steps"] = "steps"
     steps: List[str] = Field(min_length=1)
+    merge_suggestion: Optional[MergeSuggestion] = None
 
 
 class DecomposeSkipProposal(BaseModel):
     type: Literal["skip"] = "skip"
     suggestion: str
+
+
+class LinkRequest(BaseModel):
+    other_note_id: UUID

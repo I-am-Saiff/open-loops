@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import List, Union
+from typing import List, Optional, Tuple, Union
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,6 +16,8 @@ from app.schemas import (
     CrackOpenResponse,
     DecomposeSkipProposal,
     DecomposeStepsProposal,
+    LinkRequest,
+    MergeSuggestion,
     NoteCreate,
     NoteOut,
 )
@@ -50,6 +52,7 @@ def _to_out(db: Session, note: Note) -> NoteOut:
         status=note.status.value,
         created_at=note.created_at,
         stale=_is_stale(db, note),
+        linked_note_id=note.linked_note_id,
     )
 
 
@@ -161,6 +164,94 @@ Respond with ONLY the JSON object and nothing else.
 """
 
 
+MERGE_SYSTEM_PROMPT = """\
+You compare a new task's proposed steps against pending steps from a \
+person's other in-progress tasks, looking for genuine real-world overlap \
+— the same action, not just similar wording (e.g. both involve grocery \
+shopping, or both involve the same phone call).
+
+Respond with JSON in exactly one of these two shapes:
+
+1. If exactly one step from the new task overlaps with exactly one \
+pending step from another task:
+{"match": true, "new_step": "<verbatim text of the new task's step>", \
+"existing_note_id": "<the id given for that pending step>", \
+"existing_step": "<verbatim text of that pending step>"}
+
+2. If there is no genuine overlap:
+{"match": false}
+
+Only report the single clearest overlap, if any. Copy new_step, \
+existing_step, and existing_note_id verbatim from what you were given —
+do not paraphrase or invent values.
+"""
+
+
+def _find_merge_suggestion(
+    db: Session, note: Note, steps: List[str]
+) -> Optional[MergeSuggestion]:
+    """Feature C: compares `steps` (a decompose proposal that hasn't been
+    committed to real notes yet) against the pending — folded or active,
+    i.e. not-done — children of every other top-level 'active' loop.
+    Best-effort: any failure (LLM error, malformed/unverifiable response)
+    just means no suggestion, never breaks decompose. See
+    docs/DECISIONS.md ("Feature C").
+    """
+    other_loop_ids = [
+        row[0]
+        for row in db.query(Note.id)
+        .filter(
+            Note.parent_id.is_(None),
+            Note.status == NoteStatus.active,
+            Note.id != note.id,
+        )
+        .all()
+    ]
+    if not other_loop_ids:
+        return None
+
+    pending_steps: List[Tuple[str, str]] = (
+        db.query(Note.id, Note.text)
+        .filter(Note.parent_id.in_(other_loop_ids), Note.status != NoteStatus.done)
+        .all()
+    )
+    if not pending_steps:
+        return None
+
+    candidates_text = "\n".join(f'- id: {pid}\n  step: "{text}"' for pid, text in pending_steps)
+    new_steps_text = "\n".join(f"- {s}" for s in steps)
+    user_prompt = (
+        f"New task's proposed steps:\n{new_steps_text}\n\n"
+        f"Other in-progress tasks' pending steps:\n{candidates_text}\n"
+    )
+
+    try:
+        raw = complete_json(MERGE_SYSTEM_PROMPT, user_prompt)
+    except LLMError:
+        return None
+
+    if not raw.get("match"):
+        return None
+
+    new_step = raw.get("new_step")
+    existing_note_id = raw.get("existing_note_id")
+    existing_step = raw.get("existing_step")
+
+    # Verify against the real candidate set rather than trusting the LLM's
+    # echo — fail safe (no suggestion) rather than surfacing a
+    # hallucinated id or paraphrased text.
+    valid_pending = {(pid, text) for pid, text in pending_steps}
+    if new_step not in steps or (existing_note_id, existing_step) not in valid_pending:
+        return None
+
+    try:
+        return MergeSuggestion(
+            new_step=new_step, existing_note_id=existing_note_id, existing_step=existing_step
+        )
+    except ValidationError:
+        return None
+
+
 @router.post("/{note_id}/decompose")
 def decompose_note(
     note_id: UUID, db: Session = Depends(get_db)
@@ -187,7 +278,9 @@ def decompose_note(
     proposal_type = raw_proposal.get("type")
     try:
         if proposal_type == "steps":
-            return DecomposeStepsProposal(**raw_proposal)
+            proposal = DecomposeStepsProposal(**raw_proposal)
+            proposal.merge_suggestion = _find_merge_suggestion(db, note, proposal.steps)
+            return proposal
         if proposal_type == "skip":
             return DecomposeSkipProposal(**raw_proposal)
         raise ValueError(f"unknown proposal type: {proposal_type!r}")
@@ -230,6 +323,48 @@ def _promote_next_sibling_or_complete_parent(db: Session, parent: Note):
     return None
 
 
+def _complete_note(db: Session, note: Note) -> Tuple[Optional[Note], Optional[Note]]:
+    """Marks `note` done and runs its own promotion/parent-completion
+    chain. If `note` is linked to another note (Feature C — see
+    docs/DECISIONS.md) AND that note is currently its own loop's
+    front-facing 'active' step, completing `note` also completes it —
+    "completing one auto-completes the other and both parents get
+    credit." Returns (promoted_sibling, parent) for `note` itself only;
+    the linked note's own promotion is applied to the DB but not surfaced
+    in the primary response.
+
+    Deliberately does NOT cascade if the linked note is still 'folded'
+    (i.e. it isn't that note's turn yet in its own loop's sequence) —
+    doing so would force-complete a step out of order and leave two
+    children 'active' at once in that loop, breaking the core
+    fog-of-war invariant. Known limitation, not built out further: if
+    you link a step before its own turn comes up, completing its
+    counterpart elsewhere does not retroactively complete it once its
+    turn does arrive. See docs/DECISIONS.md ("Feature C").
+    """
+    note.status = NoteStatus.done
+    db.flush()
+
+    promoted_sibling = None
+    parent = None
+    if note.parent_id is not None:
+        parent = db.get(Note, note.parent_id)
+        promoted_sibling = _promote_next_sibling_or_complete_parent(db, parent)
+
+    if note.linked_note_id is not None:
+        linked = db.get(Note, note.linked_note_id)
+        if linked is not None and linked.status == NoteStatus.active:
+            linked_pending_children = (
+                db.query(Note.id)
+                .filter(Note.parent_id == linked.id, Note.status != NoteStatus.done)
+                .first()
+            )
+            if linked_pending_children is None:
+                _complete_note(db, linked)
+
+    return promoted_sibling, parent
+
+
 @router.patch("/{note_id}/complete", response_model=CompleteResponse)
 def complete_note(note_id: UUID, db: Session = Depends(get_db)) -> CompleteResponse:
     note = db.get(Note, str(note_id))
@@ -255,14 +390,7 @@ def complete_note(note_id: UUID, db: Session = Depends(get_db)) -> CompleteRespo
             detail="note has pending sub-steps and cannot be completed directly",
         )
 
-    note.status = NoteStatus.done
-    db.flush()  # so the sibling/parent queries below see this note as done
-
-    promoted_sibling = None
-    parent = None
-    if note.parent_id is not None:
-        parent = db.get(Note, note.parent_id)
-        promoted_sibling = _promote_next_sibling_or_complete_parent(db, parent)
+    promoted_sibling, parent = _complete_note(db, note)
 
     db.commit()
     db.refresh(note)
@@ -276,6 +404,34 @@ def complete_note(note_id: UUID, db: Session = Depends(get_db)) -> CompleteRespo
         promoted_sibling=_to_out(db, promoted_sibling) if promoted_sibling else None,
         parent=_to_out(db, parent) if parent is not None else None,
     )
+
+
+@router.patch("/{note_id}/link", response_model=NoteOut)
+def link_notes(
+    note_id: UUID, payload: LinkRequest, db: Session = Depends(get_db)
+) -> NoteOut:
+    """Accepts a Feature C merge suggestion: links two step notes
+    symmetrically so completing either cascades to the other (see
+    _complete_note). See docs/DECISIONS.md ("Feature C")."""
+    note = db.get(Note, str(note_id))
+    if note is None:
+        raise HTTPException(status_code=404, detail="note not found")
+    other = db.get(Note, str(payload.other_note_id))
+    if other is None:
+        raise HTTPException(status_code=404, detail="other note not found")
+    if note.id == other.id:
+        raise HTTPException(status_code=400, detail="cannot link a note to itself")
+    if note.status == NoteStatus.done or other.status == NoteStatus.done:
+        raise HTTPException(status_code=400, detail="cannot link an already-done step")
+    if note.linked_note_id is not None or other.linked_note_id is not None:
+        raise HTTPException(status_code=400, detail="one of these notes is already linked")
+
+    note.linked_note_id = other.id
+    other.linked_note_id = note.id
+    db.commit()
+    db.refresh(note)
+
+    return _to_out(db, note)
 
 
 @router.patch("/{note_id}/peek", response_model=NoteOut)

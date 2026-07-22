@@ -42,6 +42,14 @@ class Note(Base):
     peek_count = sa.Column(sa.Integer, nullable=False, default=0)
     last_peeked_at = sa.Column(sa.DateTime, nullable=True)
 
+    # Feature C: cross-loop merge. Symmetric — set on both notes when a
+    # merge suggestion is accepted via PATCH /notes/{id}/link, so either
+    # side completing cascades to the other. See docs/DECISIONS.md
+    # ("Feature C").
+    linked_note_id = sa.Column(
+        sa.String, sa.ForeignKey("notes.id", ondelete="SET NULL"), nullable=True
+    )
+
 
 sa.Index("notes_parent_id_idx", Note.parent_id)
 sa.Index("notes_parent_id_status_idx", Note.parent_id, Note.status)
