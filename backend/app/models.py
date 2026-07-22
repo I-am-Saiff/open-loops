@@ -36,6 +36,12 @@ class Note(Base):
     # Postgres. See docs/DECISIONS.md.
     created_at = sa.Column(sa.DateTime, nullable=False, default=datetime.utcnow)
 
+    # Feature B: avoidance memory. Incremented by PATCH /notes/{id}/peek
+    # whenever a folded loop is opened/viewed without progress being made
+    # (never on completion). See docs/DECISIONS.md ("Feature B").
+    peek_count = sa.Column(sa.Integer, nullable=False, default=0)
+    last_peeked_at = sa.Column(sa.DateTime, nullable=True)
+
 
 sa.Index("notes_parent_id_idx", Note.parent_id)
 sa.Index("notes_parent_id_status_idx", Note.parent_id, Note.status)

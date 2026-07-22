@@ -20,6 +20,8 @@ class NoteOut(BaseModel):
     y: float
     status: str
     created_at: datetime
+    # Feature B: computed, not stored — see docs/DECISIONS.md.
+    stale: bool
 
 
 class CrackOpenRequest(BaseModel):

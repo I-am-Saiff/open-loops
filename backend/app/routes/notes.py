@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from typing import List, Union
 from uuid import UUID
 
@@ -21,8 +22,25 @@ from app.schemas import (
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
+# Feature B thresholds — see docs/DECISIONS.md ("Feature B").
+STALE_MIN_PEEK_COUNT = 3
+STALE_MIN_AGE = timedelta(days=3)
 
-def _to_out(note: Note) -> NoteOut:
+
+def _is_stale(db: Session, note: Note) -> bool:
+    if note.peek_count < STALE_MIN_PEEK_COUNT:
+        return False
+    if datetime.utcnow() - note.created_at < STALE_MIN_AGE:
+        return False
+    completed_child = (
+        db.query(Note.id)
+        .filter(Note.parent_id == note.id, Note.status == NoteStatus.done)
+        .first()
+    )
+    return completed_child is None
+
+
+def _to_out(db: Session, note: Note) -> NoteOut:
     return NoteOut(
         id=note.id,
         parent_id=note.parent_id,
@@ -31,6 +49,7 @@ def _to_out(note: Note) -> NoteOut:
         y=note.y,
         status=note.status.value,
         created_at=note.created_at,
+        stale=_is_stale(db, note),
     )
 
 
@@ -57,7 +76,7 @@ def create_note(payload: NoteCreate, db: Session = Depends(get_db)) -> NoteOut:
     db.commit()
     db.refresh(note)
 
-    return _to_out(note)
+    return _to_out(db, note)
 
 
 @router.get("", response_model=List[NoteOut])
@@ -76,7 +95,7 @@ def list_notes(db: Session = Depends(get_db)) -> List[NoteOut]:
         .order_by(Note.created_at.asc())
         .all()
     )
-    return [_to_out(n) for n in notes]
+    return [_to_out(db, n) for n in notes]
 
 
 @router.patch("/{note_id}/crack-open", response_model=CrackOpenResponse)
@@ -119,7 +138,7 @@ def crack_open(
     db.refresh(note)
     db.refresh(children[0])
 
-    return CrackOpenResponse(parent=_to_out(note), active_child=_to_out(children[0]))
+    return CrackOpenResponse(parent=_to_out(db, note), active_child=_to_out(db, children[0]))
 
 
 DECOMPOSE_SYSTEM_PROMPT = """\
@@ -253,7 +272,55 @@ def complete_note(note_id: UUID, db: Session = Depends(get_db)) -> CompleteRespo
         db.refresh(parent)
 
     return CompleteResponse(
-        note=_to_out(note),
-        promoted_sibling=_to_out(promoted_sibling) if promoted_sibling else None,
-        parent=_to_out(parent) if parent is not None else None,
+        note=_to_out(db, note),
+        promoted_sibling=_to_out(db, promoted_sibling) if promoted_sibling else None,
+        parent=_to_out(db, parent) if parent is not None else None,
     )
+
+
+@router.patch("/{note_id}/peek", response_model=NoteOut)
+def peek_note(note_id: UUID, db: Session = Depends(get_db)) -> NoteOut:
+    """Call whenever a folded loop is opened/viewed without progress being
+    made — never on completion. Purely a counter; doesn't touch status.
+    See docs/DECISIONS.md ("Feature B").
+    """
+    note = db.get(Note, str(note_id))
+    if note is None:
+        raise HTTPException(status_code=404, detail="note not found")
+
+    note.peek_count += 1
+    note.last_peeked_at = datetime.utcnow()
+    db.commit()
+    db.refresh(note)
+
+    return _to_out(db, note)
+
+
+@router.patch("/{note_id}/keep", response_model=NoteOut)
+def keep_note(note_id: UUID, db: Session = Depends(get_db)) -> NoteOut:
+    """"Keep it" on a stale-flagged note: resets peek_count to 0 so the
+    note stops being flagged stale, without touching anything else."""
+    note = db.get(Note, str(note_id))
+    if note is None:
+        raise HTTPException(status_code=404, detail="note not found")
+
+    note.peek_count = 0
+    db.commit()
+    db.refresh(note)
+
+    return _to_out(db, note)
+
+
+@router.delete("/{note_id}", status_code=204)
+def dissolve_note(note_id: UUID, db: Session = Depends(get_db)) -> None:
+    """"Let it go" on a stale-flagged note: permanently deletes it (and,
+    via the SQLite ON DELETE CASCADE foreign key, any children) — this is
+    an actual delete, not a status change, matching the "tearing out a
+    page" framing. Not restricted to stale notes at the API level; the
+    frontend only offers this action from the stale-note prompt."""
+    note = db.get(Note, str(note_id))
+    if note is None:
+        raise HTTPException(status_code=404, detail="note not found")
+
+    db.delete(note)
+    db.commit()

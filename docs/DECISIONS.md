@@ -407,6 +407,56 @@ it straight to `done` with zero children, confirmed via the API. "Start
 over manually" correctly dismissed an active proposal and opened the
 original manual textarea panel in its place.
 
+## 2026-07-22 — Feature B backend: peek/keep/dissolve, stale is computed not stored
+
+Added `peek_count` (int, default 0) and `last_peeked_at` (nullable
+datetime) to `notes`. Schema change on an already-existing SQLite file
+required recreating `backend/openloops.db` — same limitation already
+logged under "no migration tooling for the SQLite prototype."
+
+`stale` is *not* a column — it's computed in `_to_out()` on every
+response (`_is_stale(db, note)`), so it can never drift from the
+underlying `peek_count`/`created_at`/children state the way a
+cache-on-write column could. Cost: one extra query per note in the
+response (checking for a completed child) — an N+1 pattern, acceptable
+at demo scale (same reasoning as Feature C's "not built to scale to
+hundreds yet" below), revisit with a single join if the note count ever
+gets large. Rule, exactly as specified: `peek_count >= 3` AND `now -
+created_at >= 3 days` AND no child of this note has status `done`. That
+last condition is genuinely "no child ever completed," not "no child
+currently pending" — a leaf note with zero children satisfies it
+vacuously (no children, so none of them completed), which is correct:
+a plain folded loop peeked at repeatedly for days with nothing done
+about it is exactly the "still worth keeping?" case this feature targets.
+
+Three new endpoints:
+- `PATCH /notes/{id}/peek` — incrementing counter + timestamp, no status
+  change. Nothing prevents calling it on an active/done note at the API
+  level (no guard), but the frontend only ever calls it when viewing a
+  *folded* loop, per the spec ("not when steps are completed").
+- `PATCH /notes/{id}/keep` — resets `peek_count` to 0 only;
+  `last_peeked_at` is left as-is since the spec only asked to reset the
+  count, and there's no behavior that depends on `last_peeked_at` being
+  cleared.
+- `DELETE /notes/{id}` — an actual deletion, not a status change, per
+  "tearing out a page" being irreversible. Cascades to children via the
+  existing SQLite `ON DELETE CASCADE` foreign key + `PRAGMA
+  foreign_keys=ON` (set up back when the DB was swapped to SQLite, not
+  previously exercised by any endpoint — this is the first delete this
+  codebase has ever done). Not restricted to stale notes at the API
+  level — the frontend only offers "let it go" from the stale prompt,
+  but the endpoint itself is a general delete-by-id.
+
+Verified live against real SQLite: peeked a fresh note 3x — correctly
+not stale (too new); backdated `created_at` 5 days via direct SQL —
+flipped to `stale: true`; called `keep` — `peek_count` reset and `stale`
+flipped back to `false`; cracked another note open, completed one child,
+peeked the parent 3x, backdated it — correctly stayed `stale: false`
+because a child had been completed; `DELETE`d a note with two children
+(one done, one active) and confirmed via a direct SQLite read that the
+parent *and both children* were gone, not just hidden; confirmed 404 on
+all three new endpoints for a nonexistent note.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
