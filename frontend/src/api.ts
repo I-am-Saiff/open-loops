@@ -66,3 +66,10 @@ export async function dissolveNote(id: string): Promise<void> {
     throw new Error(body.detail ?? `${res.status} ${res.statusText}`);
   }
 }
+
+export function linkNotes(id: string, otherNoteId: string): Promise<Note> {
+  return request<Note>(`/notes/${id}/link`, {
+    method: "PATCH",
+    body: JSON.stringify({ other_note_id: otherNoteId }),
+  });
+}

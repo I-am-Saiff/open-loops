@@ -9,6 +9,7 @@ export interface Note {
   status: NoteStatus;
   created_at: string;
   stale: boolean;
+  linked_note_id: string | null;
 }
 
 export interface CrackOpenResponse {
@@ -22,9 +23,16 @@ export interface CompleteResponse {
   parent: Note | null;
 }
 
+export interface MergeSuggestion {
+  new_step: string;
+  existing_note_id: string;
+  existing_step: string;
+}
+
 export interface DecomposeStepsProposal {
   type: "steps";
   steps: string[];
+  merge_suggestion: MergeSuggestion | null;
 }
 
 export interface DecomposeSkipProposal {

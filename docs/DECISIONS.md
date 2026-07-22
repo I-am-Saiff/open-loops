@@ -607,6 +607,70 @@ proposal open, linked the new step to the existing one, and:
 - confirmed `decompose` with zero other active loops in the database
   skips the merge LLM call entirely and returns `merge_suggestion: null`.
 
+## 2026-07-23 — Feature C frontend: the thread only ever connects two notes the frontend can actually see
+
+`merge_suggestion` describes a match against a step's *text*, not a real
+note — decompose is still a preview at that point. The thread/prompt
+(`MergeThread`) can only render once both ends are real: the "new" side
+needs `crack-open` to have actually run, and the "existing" side needs to
+be a note this browser's `GET /notes` response actually returned.
+Concretely, `handleConfirmProposal` only sets up a `mergeLink` if:
+
+1. `result.active_child.text === mergeSuggestion.new_step` — the step
+   that matched is the one that ended up promoted to `active` (i.e. it
+   was first in the confirmed list *and* wasn't reworded/deleted while
+   editing the proposal). If the user reordered steps or edited/removed
+   the matched one, the suggestion is silently dropped — no error, it
+   just doesn't apply anymore.
+2. A fresh `listNotes()` call actually contains `existing_note_id`. The
+   backend's merge detection deliberately compares against folded steps
+   too (see the backend entry above, for recall), but the frontend never
+   received folded children from `GET /notes` — fog-of-war is enforced
+   server-side, and this feature doesn't get a side door around it. If
+   the matched existing step is currently folded in its own loop, there
+   is nothing to draw a line to, so nothing is shown.
+
+**Consequence, stated plainly**: the merge UI only ever fires when the
+match happens to land on the very first (front-facing) step of the newly
+confirmed list. A match on step 2+ is detected by the backend (and would
+still be linkable manually via `PATCH /notes/{id}/link` if some other UI
+called it) but never surfaces in this UI. This is a real, narrow gap, not
+a hypothetical — verified directly: an earlier test where the match text
+appeared as the *second* proposed step correctly produced a
+`merge_suggestion` from the backend, but no thread ever appeared, because
+`active_child.text` was the first step, not the matched one. Accepted as
+the same "small-scale for now, not built to scale further" trade the
+backend already takes, rather than adding logic to re-derive/re-offer the
+suggestion later as fog-of-war naturally reveals more of the new loop's
+steps.
+
+Declining ("no thanks") has no backend effect — nothing was ever created
+or changed for a merge suggestion until "link them" is clicked, so
+dismissal is just `setMergeLink(null)`.
+
+No persistent visualization for already-linked notes: the thread only
+appears during the accept/decline decision right after crack-open. A
+linked pair shows no special connecting line on reload or afterward —
+only `PATCH /notes/{id}/link`'s effect on completion behavior persists,
+not any visual indicator of the link itself. Deferred as a further UI
+investment not justified for v1.
+
+Verified live end-to-end through the actual browser UI (not curl) for
+the full accept + cascade path: seeded an existing loop with a pending
+step ("call mom back"), created a new loop through the real double-click
+→ decompose → confirm flow with wording engineered to bias the LLM
+toward matching on the first proposed step (needed a few attempts — the
+model's step ordering isn't fully deterministic, and it correctly
+declines to match when the overlap isn't genuine, e.g. two different
+specific grocery runs, seen directly in earlier attempts), got the
+merge_suggestion, confirmed the proposal, and watched the dashed thread
+and prompt render connecting the two real cards. Clicked "link them",
+confirmed via the API that `linked_note_id` was set symmetrically on
+both notes. Clicked "Done" on the original loop's step and watched, live
+in the browser, the linked step in the other loop auto-complete and that
+loop advance to its own next step in the same action — no console
+errors throughout.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
@@ -636,3 +700,10 @@ proposal open, linked the new step to the existing one, and:
   already `active`. Linking a step before its own turn comes up does not
   retroactively auto-complete it once that turn arrives naturally — see
   the dedicated entry above for why and what a full fix would need.
+- Feature C's merge UI only ever appears when the matched step is the
+  first (front-facing) one in the confirmed step list — a match on a
+  later step is detected server-side but never surfaced client-side. See
+  the dedicated frontend entry above.
+- No persistent visual indicator for already-linked notes — the
+  connecting thread only shows during the initial accept/decline moment,
+  not on subsequent page loads.

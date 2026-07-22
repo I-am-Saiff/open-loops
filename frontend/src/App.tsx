@@ -7,12 +7,14 @@ import {
   decompose,
   dissolveNote,
   keepNote,
+  linkNotes,
   listNotes,
   peekNote,
 } from "./api";
+import { MergeThread } from "./MergeThread";
 import { NewNoteInput } from "./NewNoteInput";
 import { NoteCard } from "./NoteCard";
-import type { DecomposeProposal, Note } from "./types";
+import type { CrackOpenResponse, DecomposeProposal, Note } from "./types";
 import "./App.css";
 
 interface Point {
@@ -22,6 +24,16 @@ interface Point {
 
 interface Draft extends Point {
   kind: "new-note";
+}
+
+// Feature C: a merge suggestion the user hasn't decided on yet. Only ever
+// set once both ends are real, fog-of-war-visible notes — see
+// docs/DECISIONS.md ("Feature C frontend").
+interface PendingMergeLink {
+  newId: string;
+  existingId: string;
+  existingStepText: string;
+  otherLoopTitle: string;
 }
 
 export default function App() {
@@ -35,6 +47,7 @@ export default function App() {
   // note, keyed by note id. Never persisted/refetched — this is purely a
   // client-side preview step before crack-open actually runs.
   const [proposals, setProposals] = useState<Record<string, DecomposeProposal | "loading">>({});
+  const [mergeLink, setMergeLink] = useState<PendingMergeLink | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
@@ -134,18 +147,58 @@ export default function App() {
     });
   }
 
-  async function handleCrackOpen(id: string, steps: string[]) {
+  async function handleCrackOpen(id: string, steps: string[]): Promise<CrackOpenResponse | null> {
     try {
-      await crackOpen(id, steps);
+      const result = await crackOpen(id, steps);
       await refresh();
+      return result;
     } catch (err) {
       setError((err as Error).message);
+      return null;
     }
   }
 
   async function handleConfirmProposal(id: string, steps: string[]) {
+    const proposal = proposals[id];
+    const mergeSuggestion =
+      proposal !== undefined && proposal !== "loading" && proposal.type === "steps"
+        ? proposal.merge_suggestion
+        : null;
     dismissProposal(id);
-    await handleCrackOpen(id, steps);
+
+    const result = await handleCrackOpen(id, steps);
+    if (!result || !mergeSuggestion) return;
+    // Only the case where the matched new step happens to be the first
+    // (front-facing) one is handled — if the user reordered/edited/
+    // deleted that exact step, or the matched existing step isn't
+    // currently fog-of-war-visible, we silently drop the suggestion
+    // rather than draw a thread to something that isn't really there.
+    // See docs/DECISIONS.md ("Feature C frontend").
+    if (result.active_child.text !== mergeSuggestion.new_step) return;
+
+    const fresh = await listNotes();
+    const existingNote = fresh.find((n) => n.id === mergeSuggestion.existing_note_id);
+    if (!existingNote) return;
+    const otherLoop = fresh.find((n) => n.id === existingNote.parent_id);
+
+    setMergeLink({
+      newId: result.active_child.id,
+      existingId: existingNote.id,
+      existingStepText: mergeSuggestion.existing_step,
+      otherLoopTitle: otherLoop?.text ?? "another loop",
+    });
+  }
+
+  async function handleAcceptMerge() {
+    if (!mergeLink) return;
+    try {
+      await linkNotes(mergeLink.newId, mergeLink.existingId);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setMergeLink(null);
+    }
   }
 
   async function handleComplete(id: string) {
@@ -234,6 +287,17 @@ export default function App() {
             y={draft.y}
             onSubmit={handleCreateNote}
             onCancel={() => setDraft(null)}
+          />
+        )}
+
+        {mergeLink && (
+          <MergeThread
+            fromPos={positions[mergeLink.newId] ?? { x: 0, y: 0 }}
+            toPos={positions[mergeLink.existingId] ?? { x: 0, y: 0 }}
+            otherLoopTitle={mergeLink.otherLoopTitle}
+            existingStepText={mergeLink.existingStepText}
+            onAccept={handleAcceptMerge}
+            onDismiss={() => setMergeLink(null)}
           />
         )}
       </div>

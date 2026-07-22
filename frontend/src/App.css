@@ -467,3 +467,62 @@
     opacity: 0;
   }
 }
+
+/* ---------- cross-loop merge (Feature C) ---------- */
+
+.merge-thread-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.merge-thread-line {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+  opacity: 0.55;
+}
+
+.merge-prompt {
+  position: absolute;
+  z-index: 6;
+  transform: translate(-50%, -50%) rotate(-2deg);
+  width: 200px;
+  padding: 10px 12px;
+  background: var(--card-front);
+  border: 1.5px dashed var(--accent);
+  border-radius: 2px 8px 2px 8px;
+  box-shadow: var(--shadow-lifted);
+}
+
+.merge-prompt__text {
+  margin: 0 0 8px;
+  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-size: 15px;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.merge-prompt__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.merge-prompt__actions button:first-child {
+  border: none;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 3px 8px 3px 8px;
+  padding: 5px 10px;
+  font-family: Georgia, serif;
+  font-size: 12px;
+  font-weight: bold;
+  box-shadow: var(--shadow-soft);
+}
