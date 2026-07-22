@@ -1,16 +1,20 @@
-from typing import List
+from typing import List, Union
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import ValidationError
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.llm_client import LLMError, complete_json
 from app.models import Note, NoteStatus
 from app.schemas import (
     CompleteResponse,
     CrackOpenRequest,
     CrackOpenResponse,
+    DecomposeSkipProposal,
+    DecomposeStepsProposal,
     NoteCreate,
     NoteOut,
 )
@@ -116,6 +120,62 @@ def crack_open(
     db.refresh(children[0])
 
     return CrackOpenResponse(parent=_to_out(note), active_child=_to_out(children[0]))
+
+
+DECOMPOSE_SYSTEM_PROMPT = """\
+You help someone break down a vague task into a concrete plan, or tell \
+them when the task isn't worth doing as stated.
+
+Given the task text, respond with a JSON object in exactly one of these \
+two shapes:
+
+1. If the task benefits from being broken into steps, propose 3 to 6 \
+concrete, sequential, actionable sub-steps:
+{"type": "steps", "steps": ["first step", "second step", ...]}
+
+2. If the task is trivial, easily avoidable, or better handled by \
+outsourcing/delegating than doing it yourself, say so instead of \
+proposing steps:
+{"type": "skip", "suggestion": "a short, concrete alternative"}
+
+Respond with ONLY the JSON object and nothing else.
+"""
+
+
+@router.post("/{note_id}/decompose")
+def decompose_note(
+    note_id: UUID, db: Session = Depends(get_db)
+) -> Union[DecomposeStepsProposal, DecomposeSkipProposal]:
+    """Preview only — proposes a step breakdown (or a skip suggestion) for
+    a note without creating anything. The user confirms or edits the
+    proposal client-side; only then does POST /notes/{id}/crack-open (the
+    existing endpoint, unchanged) actually create the children. See
+    docs/DECISIONS.md ("Feature A: LLM-proposed decomposition").
+    """
+    note = db.get(Note, str(note_id))
+    if note is None:
+        raise HTTPException(status_code=404, detail="note not found")
+
+    existing_child = db.query(Note.id).filter(Note.parent_id == note.id).first()
+    if existing_child is not None:
+        raise HTTPException(status_code=400, detail="note already cracked open")
+
+    try:
+        raw_proposal = complete_json(DECOMPOSE_SYSTEM_PROMPT, note.text)
+    except LLMError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    proposal_type = raw_proposal.get("type")
+    try:
+        if proposal_type == "steps":
+            return DecomposeStepsProposal(**raw_proposal)
+        if proposal_type == "skip":
+            return DecomposeSkipProposal(**raw_proposal)
+        raise ValueError(f"unknown proposal type: {proposal_type!r}")
+    except (ValidationError, ValueError) as exc:
+        raise HTTPException(
+            status_code=502, detail=f"LLM returned a malformed proposal: {exc}"
+        )
 
 
 def _promote_next_sibling_or_complete_parent(db: Session, parent: Note):

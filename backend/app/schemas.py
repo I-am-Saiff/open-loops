@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -41,3 +41,15 @@ class CompleteResponse(BaseModel):
     # still be 'active' (a sibling was promoted) or now 'done' (this was
     # the last child). See docs/DECISIONS.md for the transition rule.
     parent: Optional[NoteOut] = None
+
+
+# Feature A: LLM-proposed decomposition. A preview only — decompose never
+# creates notes itself, see docs/DECISIONS.md.
+class DecomposeStepsProposal(BaseModel):
+    type: Literal["steps"] = "steps"
+    steps: List[str] = Field(min_length=1)
+
+
+class DecomposeSkipProposal(BaseModel):
+    type: Literal["skip"] = "skip"
+    suggestion: str

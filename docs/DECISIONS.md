@@ -325,6 +325,43 @@ Verified live: `complete_json()` called directly against the real Groq
 API (not mocked) with a trivial prompt, confirmed it returns a parsed
 dict from the model's JSON response.
 
+## 2026-07-22 — Feature A: LLM-proposed decomposition is a preview, commit is still crack-open
+
+`POST /notes/{id}/decompose` calls the LLM and returns its proposal
+(`{"type": "steps", "steps": [...]}` or `{"type": "skip", "suggestion":
+"..."}`) — it does not touch the database at all beyond the read to fetch
+the note and check for existing children. No notes are created. The
+existing `PATCH /notes/{id}/crack-open` endpoint (unchanged) is still the
+only thing that ever creates children and flips a parent to `active` —
+decompose is purely upstream of it, proposing what the frontend will
+*eventually* pass to crack-open once the user confirms/edits the list.
+This means the fog-of-war invariants logged earlier (exactly one
+`active` child, backend owns every status transition) don't need any new
+cases: as far as the state machine is concerned, an LLM-proposed list
+confirmed by the user and a hand-typed list are the same crack-open call.
+
+Same guard as crack-open: 400 if the note already has children (can't
+decompose something already committed to a step list). This also means
+decompose can be retried freely on a still-folded note — it's a pure
+preview, so calling it twice just asks the LLM twice, no state to
+reconcile.
+
+Response validation: the raw LLM JSON is parsed into
+`DecomposeStepsProposal`/`DecomposeSkipProposal` (Pydantic) based on its
+`type` field, and any mismatch (wrong shape, unknown `type`, empty
+`steps`) becomes a `502` rather than passing malformed data to the
+frontend — this is the same "validate at the boundary" reasoning as
+`LLMError` in `llm_client.py`, just one layer up (schema-shape validation
+here vs. transport/parsing there).
+
+Verified live against the real Groq API and real SQLite: a concrete
+multi-step task ("cook biryani Thursday") correctly returned a 4-step
+`steps` proposal; a trivial one ("reply k to moms text") correctly
+returned a `skip` proposal ("just send 'k' to mom"); calling decompose on
+an already-cracked-open note (from the earlier "Make pizza" test data)
+correctly 400'd; a nonexistent note correctly 404'd; and `GET /notes`
+before/after confirmed decompose created zero rows in either case.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
