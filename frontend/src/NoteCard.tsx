@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import type { Note } from "./types";
+import { DecomposeProposalPanel } from "./DecomposeProposalPanel";
+import type { DecomposeProposal, Note } from "./types";
 
 interface Props {
   note: Note;
@@ -9,6 +10,13 @@ interface Props {
   onDragStart: (id: string, e: ReactPointerEvent) => void;
   onCrackOpen: (id: string, steps: string[]) => void;
   onComplete: (id: string) => void;
+  // Present only right after this note was created and decompose is
+  // in flight or has returned — see docs/DECISIONS.md ("Feature A").
+  // Manual crack-open (below) stays available as a fallback regardless.
+  proposal?: DecomposeProposal | "loading";
+  onConfirmProposal: (id: string, steps: string[]) => void;
+  onDismissProposal: (id: string) => void;
+  onAcceptDissolve: (id: string) => void;
 }
 
 // Deterministic small tilt per note so cards don't line up in a grid —
@@ -22,13 +30,32 @@ function tiltForId(id: string, spreadDeg: number): number {
   return ((hash % 7) - 3) * (spreadDeg / 3);
 }
 
-export function NoteCard({ note, x, y, onDragStart, onCrackOpen, onComplete }: Props) {
+export function NoteCard({
+  note,
+  x,
+  y,
+  onDragStart,
+  onCrackOpen,
+  onComplete,
+  proposal,
+  onConfirmProposal,
+  onDismissProposal,
+  onAcceptDissolve,
+}: Props) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [stepsText, setStepsText] = useState("");
 
   const isTopLevel = note.parent_id === null;
   const isChild = !isTopLevel;
   const isFrontFacingChild = isChild && note.status === "active";
+  const showDecomposePanel = isTopLevel && note.status === "folded" && proposal !== undefined;
+
+  function useManualEntry() {
+    onDismissProposal(note.id);
+    setPanelOpen(true);
+  }
+
+  const isExpanded = panelOpen || showDecomposePanel;
 
   const classNames = [
     "note-card",
@@ -36,6 +63,7 @@ export function NoteCard({ note, x, y, onDragStart, onCrackOpen, onComplete }: P
     note.status === "done" && "note-card--done",
     isFrontFacingChild && "note-card--front",
     isTopLevel && note.status === "active" && "note-card--in-progress",
+    isExpanded && "note-card--expanded",
   ]
     .filter(Boolean)
     .join(" ");
@@ -61,7 +89,7 @@ export function NoteCard({ note, x, y, onDragStart, onCrackOpen, onComplete }: P
     >
       <div className="note-card__text">{note.text}</div>
 
-      {isTopLevel && note.status === "folded" && (
+      {isTopLevel && note.status === "folded" && !showDecomposePanel && (
         <button
           type="button"
           className="note-card__action"
@@ -72,7 +100,16 @@ export function NoteCard({ note, x, y, onDragStart, onCrackOpen, onComplete }: P
         </button>
       )}
 
-      {panelOpen && (
+      {isTopLevel && note.status === "folded" && proposal !== undefined && (
+        <DecomposeProposalPanel
+          proposal={proposal}
+          onConfirmSteps={(steps) => onConfirmProposal(note.id, steps)}
+          onAcceptDissolve={() => onAcceptDissolve(note.id)}
+          onUseManualEntry={useManualEntry}
+        />
+      )}
+
+      {!showDecomposePanel && panelOpen && (
         <div className="crack-open-panel" onPointerDown={(e) => e.stopPropagation()}>
           <textarea
             autoFocus

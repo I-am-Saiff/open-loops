@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { completeNote, crackOpen, createNote, listNotes } from "./api";
+import { completeNote, crackOpen, createNote, decompose, listNotes } from "./api";
 import { NewNoteInput } from "./NewNoteInput";
 import { NoteCard } from "./NoteCard";
-import type { Note } from "./types";
+import type { DecomposeProposal, Note } from "./types";
 import "./App.css";
 
 interface Point {
@@ -22,6 +22,10 @@ export default function App() {
   const [positions, setPositions] = useState<Record<string, Point>>({});
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Feature A: decompose proposals in flight or ready for a just-created
+  // note, keyed by note id. Never persisted/refetched — this is purely a
+  // client-side preview step before crack-open actually runs.
+  const [proposals, setProposals] = useState<Record<string, DecomposeProposal | "loading">>({});
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
@@ -89,12 +93,36 @@ export default function App() {
   async function handleCreateNote(text: string) {
     if (!draft) return;
     try {
-      await createNote({ text, x: draft.x, y: draft.y });
+      const note = await createNote({ text, x: draft.x, y: draft.y });
       setDraft(null);
       await refresh();
+      void requestDecompose(note.id);
     } catch (err) {
       setError((err as Error).message);
     }
+  }
+
+  // LLM-proposed decomposition is the primary flow for a freshly created
+  // loop; manual crack-open stays available as a fallback the whole time
+  // (see NoteCard) and this never blocks note creation itself — a failed
+  // decompose call just leaves no proposal, which silently falls back to
+  // the manual "open" flow. See docs/DECISIONS.md ("Feature A").
+  async function requestDecompose(id: string) {
+    setProposals((prev) => ({ ...prev, [id]: "loading" }));
+    try {
+      const proposal = await decompose(id);
+      setProposals((prev) => ({ ...prev, [id]: proposal }));
+    } catch {
+      dismissProposal(id);
+    }
+  }
+
+  function dismissProposal(id: string) {
+    setProposals((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
   }
 
   async function handleCrackOpen(id: string, steps: string[]) {
@@ -106,6 +134,11 @@ export default function App() {
     }
   }
 
+  async function handleConfirmProposal(id: string, steps: string[]) {
+    dismissProposal(id);
+    await handleCrackOpen(id, steps);
+  }
+
   async function handleComplete(id: string) {
     try {
       await completeNote(id);
@@ -113,6 +146,11 @@ export default function App() {
     } catch (err) {
       setError((err as Error).message);
     }
+  }
+
+  async function handleAcceptDissolve(id: string) {
+    dismissProposal(id);
+    await handleComplete(id);
   }
 
   return (
@@ -140,6 +178,10 @@ export default function App() {
               onDragStart={handleDragStart}
               onCrackOpen={handleCrackOpen}
               onComplete={handleComplete}
+              proposal={proposals[note.id]}
+              onConfirmProposal={handleConfirmProposal}
+              onDismissProposal={dismissProposal}
+              onAcceptDissolve={handleAcceptDissolve}
             />
           );
         })}

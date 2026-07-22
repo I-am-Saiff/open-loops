@@ -362,6 +362,51 @@ an already-cracked-open note (from the earlier "Make pizza" test data)
 correctly 400'd; a nonexistent note correctly 404'd; and `GET /notes`
 before/after confirmed decompose created zero rows in either case.
 
+## 2026-07-22 — Feature A frontend: decompose auto-triggers, manual entry is one click away always
+
+`App.tsx` calls `decompose()` automatically right after a new top-level
+note is created (`handleCreateNote` → `requestDecompose`), storing the
+in-flight/resolved proposal in a `proposals` map keyed by note id — never
+persisted or refetched, purely a client-side preview step. `NoteCard`
+only shows the `DecomposeProposalPanel` when a proposal exists for that
+note; every other folded note (anything not just created in this
+session, or once a proposal is dismissed) renders the original manual
+"open" → textarea flow unchanged. Concretely, "manual entry stays as a
+fallback" means three separate escape hatches, all landing on the exact
+same unchanged manual panel:
+1. `requestDecompose` catches any failure (network error, `LLMError`,
+   malformed-proposal 502) and just clears the proposal — no error UI,
+   it silently drops back to the manual "open" link.
+2. Both panel states (`loading` and resolved) have an explicit "enter/
+   crack it open myself instead" link.
+3. `DecomposeProposalPanel` never talks to the backend itself — it only
+   collects an edited `string[]` and calls back up; `onConfirmSteps`
+   wraps the existing `handleCrackOpen`, and "Accept & dissolve" (skip
+   proposals) wraps the existing `handleComplete`. Both are the same
+   functions the manual panel already called — no new backend interaction
+   paths were added for Feature A, only a new way to arrive at the
+   existing ones.
+
+CSS note: a freshly created note is still `status: folded` while its
+decompose proposal is showing (decompose doesn't touch status), so the
+proposal panel renders inside `.note-card--folded`'s narrow 170px
+max-width by default — nowhere near enough room for an editable step
+list. Added `.note-card--folded.note-card--expanded` (an `isExpanded`
+flag covering both the manual panel and the decompose panel) to widen
+the card to 300px whenever either panel is open, using a combined
+selector so it reliably beats `.note-card--folded` on specificity
+regardless of source order.
+
+Verified live in the browser end-to-end: a concrete task auto-showed 5
+editable proposed steps; deleted one, edited another's text, confirmed
+with "Crack it open" — `GET /notes` and a direct SQLite read confirmed
+the edit and deletion persisted correctly and fog-of-war held (only the
+parent + first active child returned, the 3 folded siblings not). A
+trivial task auto-showed a skip suggestion; "Accept & dissolve" flipped
+it straight to `done` with zero children, confirmed via the API. "Start
+over manually" correctly dismissed an active proposal and opened the
+original manual textarea panel in its place.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user

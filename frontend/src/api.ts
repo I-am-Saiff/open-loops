@@ -1,4 +1,4 @@
-import type { CompleteResponse, CrackOpenResponse, Note } from "./types";
+import type { CompleteResponse, CrackOpenResponse, DecomposeProposal, Note } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -40,5 +40,11 @@ export function crackOpen(id: string, steps: string[]): Promise<CrackOpenRespons
 export function completeNote(id: string): Promise<CompleteResponse> {
   return request<CompleteResponse>(`/notes/${id}/complete`, {
     method: "PATCH",
+  });
+}
+
+export function decompose(id: string): Promise<DecomposeProposal> {
+  return request<DecomposeProposal>(`/notes/${id}/decompose`, {
+    method: "POST",
   });
 }

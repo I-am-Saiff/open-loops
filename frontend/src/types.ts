@@ -20,3 +20,15 @@ export interface CompleteResponse {
   promoted_sibling: Note | null;
   parent: Note | null;
 }
+
+export interface DecomposeStepsProposal {
+  type: "steps";
+  steps: string[];
+}
+
+export interface DecomposeSkipProposal {
+  type: "skip";
+  suggestion: string;
+}
+
+export type DecomposeProposal = DecomposeStepsProposal | DecomposeSkipProposal;
