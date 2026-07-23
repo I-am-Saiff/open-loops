@@ -9,6 +9,8 @@ from app.llm_client import LLMError, complete_json
 from app.models import Message, MessageKind, MessageSender, Note, NoteStatus
 from app.routes.notes import (
     MERGE_NUDGE_SYSTEM_PROMPT,
+    TONE_HINTS,
+    _backlog_pressure,
     _complete_note,
     _crack_open,
     _generate_companion_message,
@@ -92,8 +94,9 @@ def start_thread(note_id: UUID, db: Session = Depends(get_db)) -> List[MessageOu
             if existing is not None:
                 other_loop = db.get(Note, existing.parent_id) if existing.parent_id else None
                 other_loop_title = other_loop.text if other_loop is not None else "another loop"
+                tone_hint = TONE_HINTS[_backlog_pressure(db)]
                 nudge_text = _generate_companion_message(
-                    MERGE_NUDGE_SYSTEM_PROMPT,
+                    MERGE_NUDGE_SYSTEM_PROMPT + tone_hint,
                     f'Overlapping step: "{existing.text}"\nOther task: "{other_loop_title}"',
                 )
                 if nudge_text is None:
@@ -211,7 +214,8 @@ def send_message(
 
     summary_text = None
     try:
-        raw = complete_json(SUMMARY_SYSTEM_PROMPT, context)
+        tone_hint = TONE_HINTS[_backlog_pressure(db)]
+        raw = complete_json(SUMMARY_SYSTEM_PROMPT + tone_hint, context)
         candidate = raw.get("message")
         if isinstance(candidate, str) and candidate.strip():
             summary_text = candidate.strip()

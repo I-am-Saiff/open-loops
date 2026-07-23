@@ -927,6 +927,75 @@ ran the same setup again and clicked "no thanks," confirming via the API
 that no link was created and the buttons didn't reappear. No console
 errors throughout.
 
+## 2026-07-23 — Ambient mood: backlog pressure as a tone-hint string, backend-only
+
+**Signal**: `_backlog_pressure(db)` — ratio of stale top-level loops to
+all *open* (not-done) top-level loops, bucketed into `"low"` (ratio 0),
+`"medium"` (0 < ratio < 0.5), or `"high"` (ratio >= 0.5). Denominator is
+"open," not "all loops ever" — a pile of *finished* work shouldn't make
+the companion sound more stressed; the pressure this is meant to
+capture is specifically "how much of what's currently on your plate is
+sitting untouched."
+
+**Implementation is one dict lookup, not a UI element** — literally
+`TONE_HINTS[_backlog_pressure(db)]`, a string appended to whichever
+system prompt is about to generate companion text, computed fresh on
+every relevant LLM call (decompose, stale nudge, merge nudge, summary).
+No new column, no new endpoint, nothing in `NoteOut` or any API
+response — the spec was explicit that this should only ever be
+perceptible through phrasing, and the implementation follows that
+literally: there's no code path where a pressure *value* is ever
+returned to the frontend to display, only text the LLM already produces
+differently because of it.
+
+**Bug fix, found while building this**: `_is_stale` never checked
+`note.status`. A leaf note (no children) that was already stale-flagged
+right before being completed would register as stale *forever*
+afterward — `peek_count` doesn't decrease on completion, and "no
+completed child" is vacuously true for a note with zero children
+regardless of its own status. This wasn't caught by earlier testing
+because no earlier test completed an already-stale leaf note. It matters
+now specifically because the pressure signal counts stale loops, and a
+phantom-stale completed loop would have inflated it forever. Fixed by
+short-circuiting `_is_stale` to `False` whenever `note.status ==
+NoteStatus.done`.
+
+**Consequence worth naming, found while designing the test cases, not
+guessed at**: a stale-nudge message can never be generated at "low"
+pressure, structurally. The nudge only fires when a note crosses into
+`stale`, which means `stale_count >= 1` at that moment, which means the
+ratio is never exactly 0. So while decompose/summary messages can land
+in any of the three tones, stale nudges only ever land in "medium" or
+"high" — there's no scenario where the companion sounds extra-warm while
+simultaneously telling you a loop's been neglected, which (after
+noticing it) seems like the right emergent behavior rather than a gap to
+fix.
+
+Verified live against the real Groq API with three manually-forced
+pressure levels, comparing the *same* underlying task/message type
+across levels to isolate the tone difference from content differences:
+
+- Decompose's first-step message for "plan a weekend hike" at low (1
+  open loop, 0 stale): *"pick a trail that suits your vibe — do you want
+  something chill and easy or a bit more challenging?"* — inviting,
+  a little playful. At medium (1 stale / 3 open): similar warmth,
+  slightly less elaborate. At high (1 stale / 2 open, ratio exactly at
+  the 0.5 threshold): *"figure out where you want to go — look up some
+  trails in your area and check the weather forecast"* — flatter, more
+  purely instructional, no invitation to chat back.
+- A stale nudge for the identical task ("write the novel," identical
+  peek/backdate history) at medium (1 stale diluted across 5 open
+  loops): *"Hey, just checking in on that novel you wanted to write —
+  still feeling like you want to tackle it, or has your interest shifted
+  elsewhere?"* — capitalized, fuller sentence, genuine question. At high
+  (the same note as the *only* open loop, ratio 1.0): *"hey, still
+  thinking about writing that novel or is it on the backburner for
+  now"* — lowercase, shorter, trails off without a question mark,
+  "backburner" reads as resigned rather than curious. The gradient is
+  real and consistent with the spec's description (warmer/longer at low,
+  shorter/quieter/no-exclamation-points at high) without being a jarring
+  personality swing between calls — "subtly," as asked for.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user

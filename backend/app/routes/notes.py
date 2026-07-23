@@ -63,6 +63,16 @@ task. Respond with JSON: {"message": "..."}
 
 
 def _is_stale(db: Session, note: Note) -> bool:
+    # Bug fix, caught while building the backlog-pressure signal below: a
+    # leaf note (no children) that was already stale-flagged at the
+    # moment it got completed would register as stale *forever*
+    # afterward — peek_count never decreases, and "no completed child"
+    # is vacuously true for a childless note regardless of its own
+    # status. Not exercised by earlier tests since none of them
+    # completed an already-stale leaf note. See docs/DECISIONS.md
+    # ("Ambient mood").
+    if note.status == NoteStatus.done:
+        return False
     if note.peek_count < STALE_MIN_PEEK_COUNT:
         return False
     if datetime.utcnow() - note.created_at < STALE_MIN_AGE:
@@ -73,6 +83,43 @@ def _is_stale(db: Session, note: Note) -> bool:
         .first()
     )
     return completed_child is None
+
+
+# Ambient mood — see docs/DECISIONS.md ("Ambient mood"). Deliberately
+# never exposed as a number, badge, or icon anywhere in the API or UI;
+# it only ever selects which TONE_HINTS snippet gets appended to a
+# companion-message system prompt.
+def _backlog_pressure(db: Session) -> str:
+    open_loops = (
+        db.query(Note).filter(Note.parent_id.is_(None), Note.status != NoteStatus.done).all()
+    )
+    if not open_loops:
+        return "low"
+    stale_count = sum(1 for n in open_loops if _is_stale(db, n))
+    ratio = stale_count / len(open_loops)
+    if ratio >= 0.5:
+        return "high"
+    if ratio > 0:
+        return "medium"
+    return "low"
+
+
+TONE_HINTS = {
+    "low": (
+        " Right now this person is on top of things, so keep your tone warm, "
+        "upbeat, and a little more chatty than usual."
+    ),
+    "medium": (
+        " Keep your tone friendly and even — not overly cheerful, not "
+        "somber, just steady."
+    ),
+    "high": (
+        " This person has a lot piling up right now, so keep your tone quiet "
+        "and a bit worn down, like a friend who's got a lot on their own "
+        "plate too — shorter sentences, no exclamation points, still kind "
+        "but not falsely cheerful."
+    ),
+}
 
 
 def _to_out(db: Session, note: Note) -> NoteOut:
@@ -310,8 +357,9 @@ def _run_decompose(
     thread can exist without children yet, in the skip case). See
     docs/DECISIONS.md ("Chat thread: schema and orchestration").
     """
+    tone_hint = TONE_HINTS[_backlog_pressure(db)]
     try:
-        raw_proposal = complete_json(DECOMPOSE_SYSTEM_PROMPT, note.text)
+        raw_proposal = complete_json(DECOMPOSE_SYSTEM_PROMPT + tone_hint, note.text)
     except LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
@@ -584,8 +632,9 @@ def peek_note(note_id: UUID, db: Session = Depends(get_db)) -> NoteOut:
     now_stale = _is_stale(db, note)
 
     if now_stale and not was_stale:
+        tone_hint = TONE_HINTS[_backlog_pressure(db)]
         nudge_text = _generate_companion_message(
-            STALE_NUDGE_SYSTEM_PROMPT, f'Task: "{note.text}"'
+            STALE_NUDGE_SYSTEM_PROMPT + tone_hint, f'Task: "{note.text}"'
         )
         if nudge_text is None:
             nudge_text = "you've looked at this a few times and nothing's moved — still worth keeping?"
