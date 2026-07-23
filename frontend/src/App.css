@@ -187,7 +187,6 @@
   background: var(--card-front);
   color: var(--ink);
   min-width: 160px;
-  outline: none;
   box-shadow: var(--shadow-soft);
 }
 

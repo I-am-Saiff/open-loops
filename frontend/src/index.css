@@ -21,6 +21,11 @@
   --stale-paper: #f6dfa0;
   --stale-border: #cf9f3f;
 
+  /* Intentional focus ring (accent color, low opacity) — replaces the
+     browser's default focus outline everywhere, see the button/input
+     rules below. */
+  --focus-ring: rgba(179, 80, 42, 0.45);
+
   /* This is deliberately not theme-aware (no prefers-color-scheme swap):
      the whole pitch is "looks like a physical paper notebook," and paper
      doesn't have a dark mode. See docs/DECISIONS.md. */
@@ -41,4 +46,22 @@ body {
 button {
   font: inherit;
   cursor: pointer;
+}
+
+/* Kill the browser's default dashed focus outline everywhere in the app
+   (it read as generic-web-app chrome on top of the paper look), and
+   replace it with a soft accent-colored glow that only shows up for
+   keyboard/assistive-tech navigation, not every mouse click —
+   :focus-visible, not :focus. */
+button,
+input,
+[tabindex] {
+  outline: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }

@@ -1017,6 +1017,37 @@ lines; ran a full create-loop → decompose message → Done → thread flow
 against the new background to confirm nothing else regressed. No
 console errors.
 
+## 2026-07-23 — Focus styling: no default browser outline, an intentional ring instead
+
+The default dashed browser focus outline was showing up on note-card
+buttons and chat-thread inputs — it read as generic web-app chrome
+against the paper look. Removed it globally (`button`, `input`,
+`[tabindex]{ outline: none; }` in `index.css`) and replaced it with a
+soft accent-colored `box-shadow` ring (new `--focus-ring` custom
+property, an rgba of `--accent`), scoped to `:focus-visible` rather than
+plain `:focus` so the ring only appears for keyboard/assistive-tech
+navigation, not on every mouse click.
+
+Did this as one global rule in `index.css` rather than per-component
+selectors in `App.css` — every focusable element in the app (note-card
+action buttons, chat-thread buttons and inputs, the new-loop input) is
+already a plain `<button>` or `<input>`, so one base-element rule covers
+all of them without needing to enumerate `.note-card button`,
+`.chat-thread__input input`, etc. separately. The `[tabindex]` selector
+is defensive — nothing in the codebase sets an explicit `tabIndex`
+today (confirmed via grep), but it's a one-line hedge against a future
+custom focusable element being missed.
+
+The focus-visible ring intentionally *replaces* each element's existing
+`box-shadow` (e.g. `--shadow-soft`) rather than compositing with it —
+simpler, and still reads clearly as "this is focused" without needing a
+multi-layer shadow.
+
+Verified live: tabbing through a card's "view thread" button and an
+open thread's "done"/close controls shows the accent glow, not the
+browser default; plain mouse clicks show no ring at all. No console
+errors.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
