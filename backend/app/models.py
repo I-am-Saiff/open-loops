@@ -76,6 +76,15 @@ class MessageKind(str, enum.Enum):
     summary = "summary"
     # Companion's acknowledgment that a loop just fully completed.
     done = "done"
+    # Proactive: "you've looked at this a few times and nothing's
+    # moved" — see PATCH /notes/{id}/peek. See docs/DECISIONS.md
+    # ("Feature B, in-thread").
+    stale_prompt = "stale_prompt"
+    # Proactive: a new loop's first step overlaps a pending step in
+    # another loop — see POST /notes/{id}/thread/start's merge
+    # detection. related_note_id is the *other* loop's matching step.
+    # See docs/DECISIONS.md ("Feature C, in-thread").
+    merge_prompt = "merge_prompt"
 
 
 class Message(Base):
@@ -93,6 +102,12 @@ class Message(Base):
     related_note_id = sa.Column(
         sa.String, sa.ForeignKey("notes.id", ondelete="SET NULL"), nullable=True
     )
+    # Only meaningful for stale_prompt/merge_prompt (the two kinds with
+    # reply buttons) — set True once the user acts on it (or its
+    # counterpart action makes it moot), so the buttons don't keep
+    # offering an already-decided choice on reload. Other kinds just
+    # leave this False forever. See docs/DECISIONS.md.
+    resolved = sa.Column(sa.Boolean, nullable=False, default=False)
     created_at = sa.Column(sa.DateTime, nullable=False, default=datetime.utcnow)
 
 

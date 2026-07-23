@@ -858,6 +858,75 @@ present were transient HMR failures from mid-refactor file edits, not
 from the final state, confirmed by clearing the log and reloading
 clean).
 
+## 2026-07-23 — Feature B/C return as in-thread proactive messages (backend + frontend)
+
+**Stale nudges fire on the peek "rising edge," not "is currently
+stale."** `peek_note` computes `_is_stale` before and after incrementing
+`peek_count`; a message is only created when that crosses from false to
+true. Checking "is currently stale" instead would spam a fresh nudge on
+every single re-open while already stale. This means the note only
+nudges again after "keep it" resets `peek_count` to 0 and it climbs back
+up from a real, later re-neglect — not from repeatedly looking at an
+already-flagged loop.
+
+**`resolved` added to `Message`**, used only by `stale_prompt`/
+`merge_prompt` (the two kinds with reply buttons) — the frontend checks
+`!m.resolved` before showing a message's buttons, so an answered
+question doesn't reoffer itself on reload. Three of the four actions
+(keep, link-accept, and dissolve-via-delete) already touch other state
+that a resolve step piggybacks onto for free (`keep_note` marks any
+pending `stale_prompt` resolved as part of resetting `peek_count`;
+`link_notes` searches both directions — it doesn't know a priori which
+of the two notes passed in is the "new" side — to resolve the matching
+`merge_prompt`). The fourth, declining a merge suggestion, has no other
+state change to piggyback on, which is the whole reason the new
+`PATCH /messages/{id}/dismiss` endpoint exists — a generic "resolve
+this" that's currently only reachable from that one button.
+
+**Nudge text is LLM-generated with a plain-template fallback**, same
+"fail safe, never break the interaction" posture as everywhere else the
+app calls the LLM. Chose to keep this as real (cheap, small) LLM calls
+rather than hand-written templates specifically so the tone-hint
+mechanism in the next commit has one consistent injection point across
+every kind of companion-authored text (decompose steps/skip, stale
+nudge, merge nudge, summary) instead of three LLM-backed kinds plus two
+hardcoded ones that would need special-casing.
+
+**Merge nudge only generated when the match is the newly-active step**
+— same "frontend can't act on a step it doesn't have" constraint from
+the chat-thread core-flow entry, now enforced at message-creation time
+instead of display time: if `merge.new_step != active_child.text` (the
+match landed on a later, still-folded step), no `merge_prompt` message
+is created at all, since there would be nothing valid for "link them" to
+act on. The underlying merge *detection* is unchanged and still checks
+against all pending steps for recall — this is purely about what gets
+surfaced.
+
+**Accepting a merge finds the "new" note id by walking backward from
+the `merge_prompt` message to the nearest preceding `step` message** —
+not "whatever's currently active for this loop," which could have
+drifted if the user completed steps in between seeing the nudge and
+acting on it. `related_note_id` on the `merge_prompt` itself already
+holds the "existing" side.
+
+Verified live end-to-end, backend via curl then the same flows again
+through real browser interaction: peeked a note twice (no message),
+backdated and peeked a third time (rising-edge nudge appeared, warm and
+specific to the task); "keep it" through the UI resolved it and reset
+staleness (confirmed via API); re-triggered staleness and used "let it
+go," watching the real crumple animation play before the note vanished,
+then confirmed via direct SQLite read that both the note and its
+messages were actually gone; separately walked the merge path fully
+through the UI — created a loop whose first step matched an existing
+pending step elsewhere, watched the merge nudge appear inline (not as a
+separate connecting line — just a message with buttons) alongside the
+still-present Done button, accepted it and confirmed `linked_note_id`
+was set via the API, then tapped Done and watched the cascade complete
+the other loop's step live, confirmed both loops got their own message;
+ran the same setup again and clicked "no thanks," confirming via the API
+that no link was created and the buttons didn't reappear. No console
+errors throughout.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
@@ -894,9 +963,9 @@ clean).
 - No persistent visual indicator for already-linked notes — the
   connecting thread only shows during the initial accept/decline moment,
   not on subsequent page loads.
-- **Transitional**: as of the chat-thread redesign's first commit, stale
-  loops and merge suggestions are fully computed backend-side but not
-  shown anywhere in the UI — the old card-based Feature B/C UI was
-  deleted (it can't work once steps have no cards of their own) and its
-  replacement (in-thread proactive messages) is explicitly the next
-  commit's scope, not done yet.
+- No persistent visual indicator that a note is currently stale on its
+  collapsed canvas card — you only find out by opening the thread. This
+  is deliberate (matches the spec's "the companion sends an unprompted
+  message INTO that loop's thread" framing, not a separate badge), not
+  an oversight, but noting it since a first-time user has no way to know
+  a loop needs attention without opening every one.

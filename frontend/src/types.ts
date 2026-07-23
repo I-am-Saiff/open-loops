@@ -19,7 +19,14 @@ export interface CompleteResponse {
 }
 
 export type MessageSender = "companion" | "user";
-export type MessageKind = "step" | "skip_prompt" | "user_reply" | "summary" | "done";
+export type MessageKind =
+  | "step"
+  | "skip_prompt"
+  | "user_reply"
+  | "summary"
+  | "done"
+  | "stale_prompt"
+  | "merge_prompt";
 
 export interface Message {
   id: string;
@@ -28,5 +35,6 @@ export interface Message {
   kind: MessageKind;
   text: string;
   related_note_id: string | null;
+  resolved: boolean;
   created_at: string;
 }

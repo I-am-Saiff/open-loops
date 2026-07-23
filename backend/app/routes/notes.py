@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import ValidationError
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -27,6 +27,39 @@ router = APIRouter(prefix="/notes", tags=["notes"])
 # Feature B thresholds — see docs/DECISIONS.md ("Feature B").
 STALE_MIN_PEEK_COUNT = 3
 STALE_MIN_AGE = timedelta(days=3)
+
+
+def _generate_companion_message(system_prompt: str, context: str) -> Optional[str]:
+    """Best-effort LLM-authored text for a proactive nudge (stale/merge).
+    Returns None on any failure so callers fall back to a plain templated
+    message — a failed nudge should never break the interaction it's
+    attached to. See docs/DECISIONS.md ("Feature B/C, in-thread")."""
+    try:
+        raw = complete_json(system_prompt, context)
+    except LLMError:
+        return None
+    text = raw.get("message")
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+    return None
+
+
+STALE_NUDGE_SYSTEM_PROMPT = """\
+You are a warm, casual companion checking in on someone about a task \
+they've been avoiding — they've looked at it a few times without making \
+any progress. Write ONE short, casual message (1-2 sentences) gently \
+asking if they still want to do this, the way a friend would text it —
+not preachy or guilt-tripping. Respond with JSON: {"message": "..."}
+"""
+
+MERGE_NUDGE_SYSTEM_PROMPT = """\
+You are a warm, casual companion who just noticed someone's new task \
+overlaps with something they're already doing elsewhere. Write ONE \
+short, casual message (1-2 sentences) pointing out the overlap and \
+asking if they want to combine the two, the way a friend would text it. \
+You'll be given the overlapping step text and the name of the other \
+task. Respond with JSON: {"message": "..."}
+"""
 
 
 def _is_stale(db: Session, note: Note) -> bool:
@@ -500,6 +533,27 @@ def link_notes(
 
     note.linked_note_id = other.id
     other.linked_note_id = note.id
+
+    # Resolve whichever direction the merge_prompt was actually created
+    # in (it lives in the *new* loop's thread, related_note_id pointing
+    # at the *existing* step — but link_notes doesn't know which of
+    # note/other was which, so check both). See docs/DECISIONS.md
+    # ("Feature C, in-thread").
+    merge_msg = (
+        db.query(Message)
+        .filter(
+            Message.kind == MessageKind.merge_prompt,
+            Message.resolved.is_(False),
+            or_(
+                and_(Message.note_id == note.parent_id, Message.related_note_id == other.id),
+                and_(Message.note_id == other.parent_id, Message.related_note_id == note.id),
+            ),
+        )
+        .first()
+    )
+    if merge_msg is not None:
+        merge_msg.resolved = True
+
     db.commit()
     db.refresh(note)
 
@@ -510,14 +564,40 @@ def link_notes(
 def peek_note(note_id: UUID, db: Session = Depends(get_db)) -> NoteOut:
     """Call whenever a folded loop is opened/viewed without progress being
     made — never on completion. Purely a counter; doesn't touch status.
-    See docs/DECISIONS.md ("Feature B").
+
+    If this peek pushes the note from not-stale to stale (the "rising
+    edge" — checked before vs. after incrementing), the companion sends
+    an unprompted nudge into the note's own thread. Checking the edge
+    rather than "is it currently stale" avoids re-nudging on every single
+    peek while already stale; the note only nudges again after "keep it"
+    resets the counter and it climbs back up. See docs/DECISIONS.md
+    ("Feature B, in-thread").
     """
     note = db.get(Note, str(note_id))
     if note is None:
         raise HTTPException(status_code=404, detail="note not found")
 
+    was_stale = _is_stale(db, note)
     note.peek_count += 1
     note.last_peeked_at = datetime.utcnow()
+    db.flush()
+    now_stale = _is_stale(db, note)
+
+    if now_stale and not was_stale:
+        nudge_text = _generate_companion_message(
+            STALE_NUDGE_SYSTEM_PROMPT, f'Task: "{note.text}"'
+        )
+        if nudge_text is None:
+            nudge_text = "you've looked at this a few times and nothing's moved — still worth keeping?"
+        db.add(
+            Message(
+                note_id=note.id,
+                sender=MessageSender.companion,
+                kind=MessageKind.stale_prompt,
+                text=nudge_text,
+            )
+        )
+
     db.commit()
     db.refresh(note)
 
@@ -526,13 +606,19 @@ def peek_note(note_id: UUID, db: Session = Depends(get_db)) -> NoteOut:
 
 @router.patch("/{note_id}/keep", response_model=NoteOut)
 def keep_note(note_id: UUID, db: Session = Depends(get_db)) -> NoteOut:
-    """"Keep it" on a stale-flagged note: resets peek_count to 0 so the
-    note stops being flagged stale, without touching anything else."""
+    """"Keep it" on a stale-flagged note: resets peek_count to 0, and
+    resolves any pending stale_prompt(s) in its thread so the buttons
+    stop offering an already-answered question on reload."""
     note = db.get(Note, str(note_id))
     if note is None:
         raise HTTPException(status_code=404, detail="note not found")
 
     note.peek_count = 0
+    db.query(Message).filter(
+        Message.note_id == note.id,
+        Message.kind == MessageKind.stale_prompt,
+        Message.resolved.is_(False),
+    ).update({Message.resolved: True})
     db.commit()
     db.refresh(note)
 

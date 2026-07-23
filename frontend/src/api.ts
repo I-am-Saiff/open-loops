@@ -88,3 +88,7 @@ export function manualFirstStep(noteId: string, text: string): Promise<Message[]
     body: JSON.stringify({ text }),
   });
 }
+
+export function dismissMessage(messageId: string): Promise<Message> {
+  return request<Message>(`/messages/${messageId}/dismiss`, { method: "PATCH" });
+}

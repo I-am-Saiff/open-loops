@@ -6,6 +6,10 @@ interface Props {
   x: number;
   y: number;
   isOpen: boolean;
+  // True for the DISSOLVE_ANIMATION_MS window between "let it go" and
+  // the note actually being deleted — see App.tsx and docs/DECISIONS.md
+  // ("Feature B, in-thread").
+  isDissolving: boolean;
   onDragStart: (id: string, e: ReactPointerEvent) => void;
   onOpen: (note: Note) => void;
   children?: ReactNode;
@@ -25,7 +29,7 @@ function tiltForId(id: string, spreadDeg: number): number {
 // exists on the canvas at all, it only exists as a message inside its
 // loop's thread. See docs/DECISIONS.md ("Major redesign: chat thread
 // replaces the step-list UI").
-export function NoteCard({ note, x, y, isOpen, onDragStart, onOpen, children }: Props) {
+export function NoteCard({ note, x, y, isOpen, isDissolving, onDragStart, onOpen, children }: Props) {
   const tilt = tiltForId(note.id, isOpen ? 0.4 : 2.2);
 
   const classNames = [
@@ -34,6 +38,7 @@ export function NoteCard({ note, x, y, isOpen, onDragStart, onOpen, children }: 
     note.status === "done" && "note-card--done",
     note.status === "active" && !isOpen && "note-card--in-progress",
     isOpen && "note-card--thread-open",
+    isDissolving && "note-card--dissolving",
   ]
     .filter(Boolean)
     .join(" ");

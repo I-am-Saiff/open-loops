@@ -82,6 +82,7 @@ class MessageOut(BaseModel):
     kind: str
     text: str
     related_note_id: Optional[UUID]
+    resolved: bool
     created_at: datetime
 
 

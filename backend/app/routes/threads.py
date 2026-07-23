@@ -7,7 +7,13 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.llm_client import LLMError, complete_json
 from app.models import Message, MessageKind, MessageSender, Note, NoteStatus
-from app.routes.notes import _complete_note, _crack_open, _run_decompose
+from app.routes.notes import (
+    MERGE_NUDGE_SYSTEM_PROMPT,
+    _complete_note,
+    _crack_open,
+    _generate_companion_message,
+    _run_decompose,
+)
 from app.schemas import MessageOut, SendMessageRequest
 
 router = APIRouter(tags=["threads"])
@@ -31,6 +37,7 @@ def _message_to_out(msg: Message) -> MessageOut:
         kind=msg.kind.value,
         text=msg.text,
         related_note_id=msg.related_note_id,
+        resolved=msg.resolved,
         created_at=msg.created_at,
     )
 
@@ -74,6 +81,35 @@ def start_thread(note_id: UUID, db: Session = Depends(get_db)) -> List[MessageOu
         note, active_child = _crack_open(db, note, proposal.steps)
         messages.append(_step_message(note, active_child))
         db.add(messages[0])
+
+        # Feature C, in-thread: only actionable if the matched step is
+        # the one that just became active — the frontend can't draw on
+        # or link to a step that's still folded on either side. See
+        # docs/DECISIONS.md ("Feature C, in-thread").
+        merge = proposal.merge_suggestion
+        if merge is not None and merge.new_step == active_child.text:
+            existing = db.get(Note, str(merge.existing_note_id))
+            if existing is not None:
+                other_loop = db.get(Note, existing.parent_id) if existing.parent_id else None
+                other_loop_title = other_loop.text if other_loop is not None else "another loop"
+                nudge_text = _generate_companion_message(
+                    MERGE_NUDGE_SYSTEM_PROMPT,
+                    f'Overlapping step: "{existing.text}"\nOther task: "{other_loop_title}"',
+                )
+                if nudge_text is None:
+                    nudge_text = (
+                        f'you’re already doing "{existing.text}" for '
+                        f'"{other_loop_title}" — want me to fold this into that?'
+                    )
+                merge_msg = Message(
+                    note_id=note.id,
+                    sender=MessageSender.companion,
+                    kind=MessageKind.merge_prompt,
+                    text=nudge_text,
+                    related_note_id=existing.id,
+                )
+                db.add(merge_msg)
+                messages.append(merge_msg)
     else:
         skip_msg = Message(
             note_id=note.id,
@@ -230,3 +266,24 @@ def manual_first_step(
     db.refresh(msg)
 
     return [_message_to_out(msg)]
+
+
+@router.patch("/messages/{message_id}/dismiss", response_model=MessageOut)
+def dismiss_message(message_id: UUID, db: Session = Depends(get_db)) -> MessageOut:
+    """Marks a prompt message resolved without taking its "accept" action
+    — currently only meaningful for declining a merge_prompt ("no
+    thanks"): stale_prompt's two actions (keep/dissolve) both already
+    resolve it via PATCH /notes/{id}/keep or the note being deleted
+    outright, so this is only reachable from the merge decline button
+    today, though nothing here is merge-specific. See docs/DECISIONS.md
+    ("Feature C, in-thread").
+    """
+    msg = db.get(Message, str(message_id))
+    if msg is None:
+        raise HTTPException(status_code=404, detail="message not found")
+
+    msg.resolved = True
+    db.commit()
+    db.refresh(msg)
+
+    return _message_to_out(msg)

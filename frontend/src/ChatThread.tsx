@@ -10,7 +10,24 @@ interface Props {
   onSendMessage: (text: string) => void;
   onAcceptSkip: () => void;
   onDeclineSkip: (manualStepText: string) => void;
+  onKeepStale: () => void;
+  onDropStale: () => void;
+  onAcceptMerge: (newNoteId: string, existingNoteId: string) => void;
+  onDeclineMerge: (messageId: string) => void;
   onClose: () => void;
+}
+
+// Walks backward from a merge_prompt to the 'step' message it was
+// attached to (always the immediately preceding message — see
+// threads.py's start_thread) to find which real note is the "new" side
+// of the link. See docs/DECISIONS.md ("Feature C, in-thread").
+function findPrecedingStepNoteId(messages: Message[], index: number): string | null {
+  for (let i = index - 1; i >= 0; i--) {
+    if (messages[i].kind === "step" && messages[i].related_note_id) {
+      return messages[i].related_note_id;
+    }
+  }
+  return null;
 }
 
 // One loop = one persistent chat thread. Messages render in order, oldest
@@ -26,6 +43,10 @@ export function ChatThread({
   onSendMessage,
   onAcceptSkip,
   onDeclineSkip,
+  onKeepStale,
+  onDropStale,
+  onAcceptMerge,
+  onDeclineMerge,
   onClose,
 }: Props) {
   const [inputText, setInputText] = useState("");
@@ -76,9 +97,41 @@ export function ChatThread({
       </div>
 
       <div className="chat-thread__messages">
-        {messages.map((m) => (
-          <div key={m.id} className={`chat-bubble chat-bubble--${m.sender}`}>
-            {m.text}
+        {messages.map((m, i) => (
+          <div key={m.id}>
+            <div className={`chat-bubble chat-bubble--${m.sender}`}>{m.text}</div>
+
+            {m.kind === "stale_prompt" && !m.resolved && !readOnly && (
+              <div className="chat-thread__reply-actions">
+                <button type="button" onClick={onKeepStale}>
+                  keep it
+                </button>
+                <button type="button" className="note-card__action--quiet" onClick={onDropStale}>
+                  let it go
+                </button>
+              </div>
+            )}
+
+            {m.kind === "merge_prompt" && !m.resolved && !readOnly && m.related_note_id && (
+              <div className="chat-thread__reply-actions">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newNoteId = findPrecedingStepNoteId(messages, i);
+                    if (newNoteId) onAcceptMerge(newNoteId, m.related_note_id!);
+                  }}
+                >
+                  link them
+                </button>
+                <button
+                  type="button"
+                  className="note-card__action--quiet"
+                  onClick={() => onDeclineMerge(m.id)}
+                >
+                  no thanks
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>

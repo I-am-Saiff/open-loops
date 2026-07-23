@@ -356,3 +356,24 @@
   font-size: 12px;
   font-weight: bold;
 }
+
+/* ---------- dissolve ("let it go", Feature B in-thread) ---------- */
+/* Duration mirrored in App.tsx's DISSOLVE_ANIMATION_MS — the actual
+   delete is deferred until this finishes playing, like tearing out a
+   page before it's gone for good. */
+
+.note-card--dissolving {
+  animation: dissolve 450ms ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes dissolve {
+  0% {
+    transform: rotate(var(--tilt, 0deg)) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(calc(var(--tilt, 0deg) + 35deg)) scale(0.15);
+    opacity: 0;
+  }
+}

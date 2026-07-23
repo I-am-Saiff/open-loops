@@ -4,6 +4,10 @@ import {
   advanceThread,
   completeNote,
   createNote,
+  dismissMessage,
+  dissolveNote,
+  keepNote,
+  linkNotes,
   listMessages,
   listNotes,
   manualFirstStep,
@@ -26,6 +30,11 @@ interface Draft extends Point {
   kind: "new-note";
 }
 
+// Matches App.css's @keyframes dissolve duration — the actual DELETE is
+// deferred until the crumple animation finishes playing. See
+// docs/DECISIONS.md ("Feature B, in-thread").
+const DISSOLVE_ANIMATION_MS = 450;
+
 export default function App() {
   const [notes, setNotes] = useState<Note[]>([]);
   // Drag position overrides, keyed by note id. Local/session-only — there
@@ -38,6 +47,10 @@ export default function App() {
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
   // Message history per loop, keyed by the loop's (top-level) note id.
   const [threads, setThreads] = useState<Record<string, Message[]>>({});
+  // The loop currently mid-crumple after "let it go" — see
+  // handleDropStale. Only one can dissolve at a time in practice (you
+  // can only have one thread open), but keyed by id for clarity.
+  const [dissolvingId, setDissolvingId] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
@@ -198,6 +211,72 @@ export default function App() {
     }
   }
 
+  // Refetches a single thread's messages — used after actions (keep,
+  // link, decline) whose effect is "some earlier message's resolved flag
+  // flipped," which isn't something appendMessages (built for brand-new
+  // messages) can express as a local patch.
+  async function refetchThread(noteId: string) {
+    try {
+      const msgs = await listMessages(noteId);
+      setThreads((prev) => ({ ...prev, [noteId]: msgs }));
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  // Feature B, in-thread: "keep it" on a stale nudge.
+  async function handleKeepStale(noteId: string) {
+    try {
+      await keepNote(noteId);
+      await refetchThread(noteId);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  // Feature B, in-thread: "let it go" — plays the crumple animation
+  // (NoteCard's isDissolving prop) and only calls the actual, permanent
+  // DELETE once it finishes, same pattern the original card-based
+  // dissolve used.
+  function handleDropStale(noteId: string) {
+    setDissolvingId(noteId);
+    window.setTimeout(async () => {
+      try {
+        await dissolveNote(noteId);
+        setOpenThreadId((cur) => (cur === noteId ? null : cur));
+        await refresh();
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setDissolvingId(null);
+      }
+    }, DISSOLVE_ANIMATION_MS);
+  }
+
+  // Feature C, in-thread: "link them" on a merge nudge.
+  async function handleAcceptMerge(noteId: string, newNoteId: string, existingNoteId: string) {
+    try {
+      await linkNotes(newNoteId, existingNoteId);
+      await refetchThread(noteId);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  // Feature C, in-thread: "no thanks" on a merge nudge — nothing to
+  // undo (accepting is the only action that changes anything), just
+  // mark the prompt resolved so its buttons don't reoffer on reload.
+  async function handleDeclineMerge(noteId: string, messageId: string) {
+    try {
+      await dismissMessage(messageId);
+      await refetchThread(noteId);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
   return (
     <div className="app">
       <header className="app__header">
@@ -224,6 +303,7 @@ export default function App() {
                 x={pos.x}
                 y={pos.y}
                 isOpen={isOpen}
+                isDissolving={dissolvingId === note.id}
                 onDragStart={handleDragStart}
                 onOpen={handleOpenLoop}
               >
@@ -237,6 +317,12 @@ export default function App() {
                     onSendMessage={(text) => handleSendMessage(note.id, text)}
                     onAcceptSkip={() => handleAcceptSkip(note.id)}
                     onDeclineSkip={(text) => handleDeclineSkip(note.id, text)}
+                    onKeepStale={() => handleKeepStale(note.id)}
+                    onDropStale={() => handleDropStale(note.id)}
+                    onAcceptMerge={(newId, existingId) =>
+                      handleAcceptMerge(note.id, newId, existingId)
+                    }
+                    onDeclineMerge={(msgId) => handleDeclineMerge(note.id, msgId)}
                     onClose={handleCloseThread}
                   />
                 )}
