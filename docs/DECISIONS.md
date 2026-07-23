@@ -996,6 +996,27 @@ across levels to isolate the tone difference from content differences:
   shorter/quieter/no-exclamation-points at high) without being a jarring
   personality swing between calls — "subtly," as asked for.
 
+## 2026-07-23 — Blank paper background
+
+Removed `.canvas`'s ruled-horizontal-lines + red-margin-line
+`background-image` entirely, leaving just `background-color:
+var(--paper)`. The subtle grain texture didn't need re-adding —
+`.app::before`'s SVG `feTurbulence` overlay already covers the whole
+`.app` container, canvas included, so removing the canvas's own
+background layer just lets that grain show through on its own instead
+of underneath the ruled-lines pattern.
+
+Kept `--paper-line` (still used for the header's dashed
+perforation-style border, unrelated to the canvas) but removed
+`--paper-margin` from `index.css` — it was only ever referenced by the
+now-deleted margin-line gradient, so keeping it would just be an unused
+CSS custom property.
+
+Verified live: canvas renders as plain, uniform paper with no visible
+lines; ran a full create-loop → decompose message → Done → thread flow
+against the new background to confirm nothing else regressed. No
+console errors.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user

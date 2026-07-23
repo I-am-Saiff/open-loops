@@ -1,7 +1,9 @@
 :root {
   --paper: #f3ecda;
+  /* Only used for the header's perforation-style border now — the
+     ruled-lines canvas background was removed. See docs/DECISIONS.md
+     ("Blank paper background"). */
   --paper-line: #b9c9d9;
-  --paper-margin: #e0a9a2;
   --ink: #3a3226;
   --ink-dim: #8c8272;
   --card: #fbf6e8;

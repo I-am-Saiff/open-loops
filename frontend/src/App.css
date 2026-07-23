@@ -57,26 +57,16 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* Plain blank paper — no ruled lines, no margin rule. The subtle grain
+   texture still comes from .app::before, which covers the whole app
+   including the canvas. See docs/DECISIONS.md ("Blank paper
+   background"). */
 .canvas {
   position: relative;
   z-index: 1;
   flex: 1 1 auto;
   overflow: auto;
   background-color: var(--paper);
-  background-attachment: local;
-  background-image:
-    linear-gradient(
-      to right,
-      transparent 0 51px,
-      var(--paper-margin) 51px 52px,
-      transparent 52px
-    ),
-    repeating-linear-gradient(
-      to bottom,
-      var(--paper-line) 0 1px,
-      transparent 1px 34px
-    );
-  background-repeat: repeat, repeat;
 }
 
 /* ---------- note cards ---------- */
