@@ -71,3 +71,19 @@ class DecomposeSkipProposal(BaseModel):
 
 class LinkRequest(BaseModel):
     other_note_id: UUID
+
+
+# Chat-thread redesign. One thread per top-level loop, see
+# docs/DECISIONS.md ("Chat thread: schema and orchestration").
+class MessageOut(BaseModel):
+    id: UUID
+    note_id: UUID
+    sender: str
+    kind: str
+    text: str
+    related_note_id: Optional[UUID]
+    created_at: datetime
+
+
+class SendMessageRequest(BaseModel):
+    text: str = Field(min_length=1)

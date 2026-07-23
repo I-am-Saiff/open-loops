@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.llm_client import LLMError, complete_json
-from app.models import Note, NoteStatus
+from app.models import Message, MessageKind, MessageSender, Note, NoteStatus
 from app.schemas import (
     CompleteResponse,
     CrackOpenRequest,
@@ -101,6 +101,41 @@ def list_notes(db: Session = Depends(get_db)) -> List[NoteOut]:
     return [_to_out(db, n) for n in notes]
 
 
+def _crack_open(db: Session, note: Note, steps: List[str]) -> Tuple[Note, Note]:
+    """Shared by the HTTP route below and the chat-thread orchestration in
+    routes/threads.py — the actual note-creation logic never duplicates.
+    Caller is responsible for the "already cracked open" guard (it needs
+    to run before any LLM call in the thread-start flow, so it can't live
+    here). See docs/DECISIONS.md ("Chat thread: schema and orchestration").
+    """
+    # Children start at the parent's position — the user drags them out
+    # from there. Constructed one at a time so created_at (Python-side,
+    # see app/models.py) preserves the submitted step order.
+    children = [
+        Note(
+            parent_id=note.id,
+            text=step_text,
+            x=note.x,
+            y=note.y,
+            status=NoteStatus.folded,
+        )
+        for step_text in steps
+    ]
+    for child in children:
+        db.add(child)
+
+    # Exactly one child is ever 'active' at a time — the first step in
+    # submission order. See docs/DECISIONS.md ("Creation status, and
+    # crack-open as its own endpoint").
+    children[0].status = NoteStatus.active
+    note.status = NoteStatus.active
+
+    db.commit()
+    db.refresh(note)
+    db.refresh(children[0])
+    return note, children[0]
+
+
 @router.patch("/{note_id}/crack-open", response_model=CrackOpenResponse)
 def crack_open(
     note_id: UUID, payload: CrackOpenRequest, db: Session = Depends(get_db)
@@ -115,50 +150,30 @@ def crack_open(
     if existing_child is not None:
         raise HTTPException(status_code=400, detail="note already cracked open")
 
-    # Children start at the parent's position — the user drags them out
-    # from there. Constructed one at a time so created_at (Python-side,
-    # see app/models.py) preserves the submitted step order.
-    children = [
-        Note(
-            parent_id=note.id,
-            text=step_text,
-            x=note.x,
-            y=note.y,
-            status=NoteStatus.folded,
-        )
-        for step_text in payload.steps
-    ]
-    for child in children:
-        db.add(child)
-
-    # Exactly one child is ever 'active' at a time — the first step in
-    # submission order. See docs/DECISIONS.md ("Creation status, and
-    # crack-open as its own endpoint").
-    children[0].status = NoteStatus.active
-    note.status = NoteStatus.active
-
-    db.commit()
-    db.refresh(note)
-    db.refresh(children[0])
-
-    return CrackOpenResponse(parent=_to_out(db, note), active_child=_to_out(db, children[0]))
+    note, active_child = _crack_open(db, note, payload.steps)
+    return CrackOpenResponse(parent=_to_out(db, note), active_child=_to_out(db, active_child))
 
 
 DECOMPOSE_SYSTEM_PROMPT = """\
-You help someone break down a vague task into a concrete plan, or tell \
-them when the task isn't worth doing as stated.
+You are a warm, casual companion helping someone break a task into a \
+plan — like a friend texting them through it one step at a time, not a \
+project manager handing over a checklist.
 
 Given the task text, respond with a JSON object in exactly one of these \
 two shapes:
 
-1. If the task benefits from being broken into steps, propose 3 to 6 \
-concrete, sequential, actionable sub-steps:
-{"type": "steps", "steps": ["first step", "second step", ...]}
+1. If the task benefits from being broken into steps, write 3 to 6 \
+concrete, sequential steps as short conversational messages — the way \
+you'd actually text a friend the next thing to do (e.g. "first, prep \
+your ingredients — chicken, onions, ginger, garlic, curry spices. lmk \
+when that's done" rather than "Prep ingredients"). Each one should read \
+like a message, not a bullet point:
+{"type": "steps", "steps": ["first step as a casual message", "second step as a casual message", ...]}
 
 2. If the task is trivial, easily avoidable, or better handled by \
-outsourcing/delegating than doing it yourself, say so instead of \
-proposing steps:
-{"type": "skip", "suggestion": "a short, concrete alternative"}
+outsourcing/delegating than doing it yourself, write one casual message \
+saying so and suggesting the alternative, the way a friend would:
+{"type": "skip", "suggestion": "a short, casual message with the alternative"}
 
 Respond with ONLY the JSON object and nothing else.
 """
@@ -252,24 +267,16 @@ def _find_merge_suggestion(
         return None
 
 
-@router.post("/{note_id}/decompose")
-def decompose_note(
-    note_id: UUID, db: Session = Depends(get_db)
+def _run_decompose(
+    db: Session, note: Note
 ) -> Union[DecomposeStepsProposal, DecomposeSkipProposal]:
-    """Preview only — proposes a step breakdown (or a skip suggestion) for
-    a note without creating anything. The user confirms or edits the
-    proposal client-side; only then does POST /notes/{id}/crack-open (the
-    existing endpoint, unchanged) actually create the children. See
-    docs/DECISIONS.md ("Feature A: LLM-proposed decomposition").
+    """The actual decompose logic — reusable by the standalone HTTP route
+    below and by the chat-thread orchestration in routes/threads.py.
+    Callers own the "already cracked open" guard, since it needs to run
+    before any LLM call and threads.py has its own version of it (a
+    thread can exist without children yet, in the skip case). See
+    docs/DECISIONS.md ("Chat thread: schema and orchestration").
     """
-    note = db.get(Note, str(note_id))
-    if note is None:
-        raise HTTPException(status_code=404, detail="note not found")
-
-    existing_child = db.query(Note.id).filter(Note.parent_id == note.id).first()
-    if existing_child is not None:
-        raise HTTPException(status_code=400, detail="note already cracked open")
-
     try:
         raw_proposal = complete_json(DECOMPOSE_SYSTEM_PROMPT, note.text)
     except LLMError as exc:
@@ -288,6 +295,27 @@ def decompose_note(
         raise HTTPException(
             status_code=502, detail=f"LLM returned a malformed proposal: {exc}"
         )
+
+
+@router.post("/{note_id}/decompose")
+def decompose_note(
+    note_id: UUID, db: Session = Depends(get_db)
+) -> Union[DecomposeStepsProposal, DecomposeSkipProposal]:
+    """Preview only — proposes a step breakdown (or a skip suggestion) for
+    a note without creating anything. Kept as its own clean, side-effect-
+    free endpoint; the chat-thread flow (routes/threads.py) calls
+    _run_decompose directly rather than hitting this over HTTP, but the
+    logic is identical either way. See docs/DECISIONS.md.
+    """
+    note = db.get(Note, str(note_id))
+    if note is None:
+        raise HTTPException(status_code=404, detail="note not found")
+
+    existing_child = db.query(Note.id).filter(Note.parent_id == note.id).first()
+    if existing_child is not None:
+        raise HTTPException(status_code=400, detail="note already cracked open")
+
+    return _run_decompose(db, note)
 
 
 def _promote_next_sibling_or_complete_parent(db: Session, parent: Note):
@@ -323,15 +351,56 @@ def _promote_next_sibling_or_complete_parent(db: Session, parent: Note):
     return None
 
 
-def _complete_note(db: Session, note: Note) -> Tuple[Optional[Note], Optional[Note]]:
+def _record_progress_message(
+    db: Session, parent: Note, promoted_sibling: Optional[Note]
+) -> Optional[Message]:
+    """Appends the chat-thread message a completion produces: the next
+    step (its text is already conversational — decompose wrote it that
+    way, see DECOMPOSE_SYSTEM_PROMPT) or, if the whole loop just
+    finished, a short acknowledgment. Always attached to `parent`'s own
+    thread (note_id = parent.id), even when called for a cascaded linked
+    note in a different loop — that loop's own thread is what should show
+    its own progress. See docs/DECISIONS.md ("Chat thread").
+    """
+    if promoted_sibling is not None:
+        msg = Message(
+            note_id=parent.id,
+            sender=MessageSender.companion,
+            kind=MessageKind.step,
+            text=promoted_sibling.text,
+            related_note_id=promoted_sibling.id,
+        )
+    elif parent.status == NoteStatus.done:
+        msg = Message(
+            note_id=parent.id,
+            sender=MessageSender.companion,
+            kind=MessageKind.done,
+            text="that's everything for this one — nice work.",
+        )
+    else:
+        # Defensive: _promote_next_sibling_or_complete_parent always
+        # either promotes a sibling or completes the parent under the
+        # current invariants. Nothing to say if somehow neither happened.
+        return None
+    db.add(msg)
+    db.flush()
+    return msg
+
+
+def _complete_note(
+    db: Session, note: Note, messages: List[Message]
+) -> Tuple[Optional[Note], Optional[Note]]:
     """Marks `note` done and runs its own promotion/parent-completion
     chain. If `note` is linked to another note (Feature C — see
     docs/DECISIONS.md) AND that note is currently its own loop's
     front-facing 'active' step, completing `note` also completes it —
     "completing one auto-completes the other and both parents get
     credit." Returns (promoted_sibling, parent) for `note` itself only;
-    the linked note's own promotion is applied to the DB but not surfaced
-    in the primary response.
+    the linked note's own promotion is applied to the DB but not
+    reflected in the return value — `messages` (mutated in place)
+    collects every chat message this call produced, across both the
+    primary note and any cascade, so callers can see what happened in
+    every thread touched, not just the one they called about.
 
     Deliberately does NOT cascade if the linked note is still 'folded'
     (i.e. it isn't that note's turn yet in its own loop's sequence) —
@@ -350,6 +419,9 @@ def _complete_note(db: Session, note: Note) -> Tuple[Optional[Note], Optional[No
     if note.parent_id is not None:
         parent = db.get(Note, note.parent_id)
         promoted_sibling = _promote_next_sibling_or_complete_parent(db, parent)
+        msg = _record_progress_message(db, parent, promoted_sibling)
+        if msg is not None:
+            messages.append(msg)
 
     if note.linked_note_id is not None:
         linked = db.get(Note, note.linked_note_id)
@@ -360,7 +432,7 @@ def _complete_note(db: Session, note: Note) -> Tuple[Optional[Note], Optional[No
                 .first()
             )
             if linked_pending_children is None:
-                _complete_note(db, linked)
+                _complete_note(db, linked, messages)
 
     return promoted_sibling, parent
 
@@ -390,7 +462,7 @@ def complete_note(note_id: UUID, db: Session = Depends(get_db)) -> CompleteRespo
             detail="note has pending sub-steps and cannot be completed directly",
         )
 
-    promoted_sibling, parent = _complete_note(db, note)
+    promoted_sibling, parent = _complete_note(db, note, [])
 
     db.commit()
     db.refresh(note)

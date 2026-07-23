@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.db import engine
 from app.models import Base
 from app.routes.notes import router as notes_router
+from app.routes.threads import router as threads_router
 
 # SQLite prototype: create the schema on startup instead of a manual
 # migration step — zero setup needed to run this. See docs/DECISIONS.md.
@@ -21,3 +22,4 @@ app.add_middleware(
 )
 
 app.include_router(notes_router)
+app.include_router(threads_router)

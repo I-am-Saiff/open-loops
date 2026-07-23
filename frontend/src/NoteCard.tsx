@@ -1,110 +1,49 @@
-import { useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
-import { DecomposeProposalPanel } from "./DecomposeProposalPanel";
-import { StaleNotePrompt } from "./StaleNotePrompt";
-import type { DecomposeProposal, Note } from "./types";
-
-// Matches the CSS --dissolve-duration below — the actual DELETE call
-// (and the note leaving state) is deferred until the crumple animation
-// finishes playing. See docs/DECISIONS.md ("Feature B").
-const DISSOLVE_ANIMATION_MS = 450;
+import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type { Note } from "./types";
 
 interface Props {
   note: Note;
   x: number;
   y: number;
+  isOpen: boolean;
   onDragStart: (id: string, e: ReactPointerEvent) => void;
-  onCrackOpen: (id: string, steps: string[]) => void;
-  onComplete: (id: string) => void;
-  // Present only right after this note was created and decompose is
-  // in flight or has returned — see docs/DECISIONS.md ("Feature A").
-  // Manual crack-open (below) stays available as a fallback regardless.
-  proposal?: DecomposeProposal | "loading";
-  onConfirmProposal: (id: string, steps: string[]) => void;
-  onDismissProposal: (id: string) => void;
-  onAcceptDissolve: (id: string) => void;
-  // Feature B: avoidance memory.
-  onPeek: (id: string) => void;
-  onKeep: (id: string) => void;
-  onDissolve: (id: string) => void;
+  onOpen: (note: Note) => void;
+  children?: ReactNode;
 }
 
 // Deterministic small tilt per note so cards don't line up in a grid —
-// part of the "handwriting on paper" feel from docs/SPEC.md. The active
-// front-facing card gets a much narrower spread than folded/done ones —
-// it reads as the one piece of paper you just set down carefully in
-// front of you, versus everything else scattered around it.
+// part of the "handwriting on paper" feel from docs/SPEC.md. An open
+// thread sits nearly flat (it's the one thing in front of you); closed
+// cards scatter more.
 function tiltForId(id: string, spreadDeg: number): number {
   let hash = 0;
   for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
   return ((hash % 7) - 3) * (spreadDeg / 3);
 }
 
-export function NoteCard({
-  note,
-  x,
-  y,
-  onDragStart,
-  onCrackOpen,
-  onComplete,
-  proposal,
-  onConfirmProposal,
-  onDismissProposal,
-  onAcceptDissolve,
-  onPeek,
-  onKeep,
-  onDissolve,
-}: Props) {
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [stepsText, setStepsText] = useState("");
-  const [dissolving, setDissolving] = useState(false);
-
-  const isTopLevel = note.parent_id === null;
-  const isChild = !isTopLevel;
-  const isFrontFacingChild = isChild && note.status === "active";
-  const showDecomposePanel = isTopLevel && note.status === "folded" && proposal !== undefined;
-  const showStalePrompt = isTopLevel && note.status === "folded" && note.stale && !showDecomposePanel;
-
-  function useManualEntry() {
-    onDismissProposal(note.id);
-    setPanelOpen(true);
-  }
-
-  function openManually() {
-    onPeek(note.id);
-    setPanelOpen((open) => !open);
-  }
-
-  function handleLetGo() {
-    setDissolving(true);
-    window.setTimeout(() => onDissolve(note.id), DISSOLVE_ANIMATION_MS);
-  }
-
-  const isExpanded = panelOpen || showDecomposePanel;
+// Only ever rendered for top-level loops now — a step's "card" no longer
+// exists on the canvas at all, it only exists as a message inside its
+// loop's thread. See docs/DECISIONS.md ("Major redesign: chat thread
+// replaces the step-list UI").
+export function NoteCard({ note, x, y, isOpen, onDragStart, onOpen, children }: Props) {
+  const tilt = tiltForId(note.id, isOpen ? 0.4 : 2.2);
 
   const classNames = [
     "note-card",
     note.status === "folded" && "note-card--folded",
     note.status === "done" && "note-card--done",
-    isFrontFacingChild && "note-card--front",
-    isTopLevel && note.status === "active" && "note-card--in-progress",
-    isExpanded && "note-card--expanded",
-    dissolving && "note-card--dissolving",
+    note.status === "active" && !isOpen && "note-card--in-progress",
+    isOpen && "note-card--thread-open",
   ]
     .filter(Boolean)
     .join(" ");
 
-  const tilt = tiltForId(note.id, isFrontFacingChild ? 0.6 : 2.4);
-
-  function submitCrackOpen() {
-    const steps = stepsText
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (steps.length === 0) return;
-    onCrackOpen(note.id, steps);
-    setPanelOpen(false);
-    setStepsText("");
+  if (isOpen) {
+    return (
+      <div className={classNames} style={{ left: x, top: y } as React.CSSProperties}>
+        {children}
+      </div>
+    );
   }
 
   return (
@@ -114,66 +53,24 @@ export function NoteCard({
       onPointerDown={(e) => onDragStart(note.id, e)}
     >
       <div className="note-card__text">{note.text}</div>
-
-      {isTopLevel && note.status === "folded" && !showDecomposePanel && !showStalePrompt && (
+      {note.status !== "done" && (
         <button
           type="button"
           className="note-card__action"
           onPointerDown={(e) => e.stopPropagation()}
-          onClick={openManually}
+          onClick={() => onOpen(note)}
         >
-          {panelOpen ? "cancel" : "open"}
+          {note.status === "folded" ? "open" : "continue"}
         </button>
       )}
-
-      {isTopLevel && note.status === "folded" && proposal !== undefined && (
-        <DecomposeProposalPanel
-          proposal={proposal}
-          onConfirmSteps={(steps) => onConfirmProposal(note.id, steps)}
-          onAcceptDissolve={() => onAcceptDissolve(note.id)}
-          onUseManualEntry={useManualEntry}
-        />
-      )}
-
-      {showStalePrompt && (
-        <StaleNotePrompt onKeep={() => onKeep(note.id)} onLetGo={handleLetGo} />
-      )}
-
-      {!showDecomposePanel && !showStalePrompt && panelOpen && (
-        <div className="crack-open-panel" onPointerDown={(e) => e.stopPropagation()}>
-          <textarea
-            autoFocus
-            className="crack-open-panel__textarea"
-            placeholder={"one sub-step per line…"}
-            value={stepsText}
-            onChange={(e) => setStepsText(e.target.value)}
-          />
-          <div className="crack-open-panel__actions">
-            <button type="button" onClick={submitCrackOpen}>
-              Crack open
-            </button>
-            <button
-              type="button"
-              className="note-card__action--quiet"
-              onClick={() => {
-                onComplete(note.id);
-                setPanelOpen(false);
-              }}
-            >
-              No sub-steps, mark done
-            </button>
-          </div>
-        </div>
-      )}
-
-      {isFrontFacingChild && (
+      {note.status === "done" && (
         <button
           type="button"
-          className="note-card__done-btn"
+          className="note-card__action--quiet"
           onPointerDown={(e) => e.stopPropagation()}
-          onClick={() => onComplete(note.id)}
+          onClick={() => onOpen(note)}
         >
-          Done
+          view thread
         </button>
       )}
     </div>

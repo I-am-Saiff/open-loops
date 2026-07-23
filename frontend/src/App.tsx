@@ -1,20 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import {
+  advanceThread,
   completeNote,
-  crackOpen,
   createNote,
-  decompose,
-  dissolveNote,
-  keepNote,
-  linkNotes,
+  listMessages,
   listNotes,
+  manualFirstStep,
   peekNote,
+  sendThreadMessage,
+  startThread,
 } from "./api";
-import { MergeThread } from "./MergeThread";
+import { ChatThread } from "./ChatThread";
 import { NewNoteInput } from "./NewNoteInput";
 import { NoteCard } from "./NoteCard";
-import type { CrackOpenResponse, DecomposeProposal, Note } from "./types";
+import type { Message, Note } from "./types";
 import "./App.css";
 
 interface Point {
@@ -26,16 +26,6 @@ interface Draft extends Point {
   kind: "new-note";
 }
 
-// Feature C: a merge suggestion the user hasn't decided on yet. Only ever
-// set once both ends are real, fog-of-war-visible notes — see
-// docs/DECISIONS.md ("Feature C frontend").
-interface PendingMergeLink {
-  newId: string;
-  existingId: string;
-  existingStepText: string;
-  otherLoopTitle: string;
-}
-
 export default function App() {
   const [notes, setNotes] = useState<Note[]>([]);
   // Drag position overrides, keyed by note id. Local/session-only — there
@@ -43,11 +33,11 @@ export default function App() {
   const [positions, setPositions] = useState<Record<string, Point>>({});
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Feature A: decompose proposals in flight or ready for a just-created
-  // note, keyed by note id. Never persisted/refetched — this is purely a
-  // client-side preview step before crack-open actually runs.
-  const [proposals, setProposals] = useState<Record<string, DecomposeProposal | "loading">>({});
-  const [mergeLink, setMergeLink] = useState<PendingMergeLink | null>(null);
+  // Which loop's thread is currently expanded on the canvas — only one at
+  // a time, matching "the one piece of paper in front of you."
+  const [openThreadId, setOpenThreadId] = useState<string | null>(null);
+  // Message history per loop, keyed by the loop's (top-level) note id.
+  const [threads, setThreads] = useState<Record<string, Message[]>>({});
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
@@ -63,8 +53,10 @@ export default function App() {
         }
         return next;
       });
+      return fetched;
     } catch (err) {
       setError((err as Error).message);
+      return null;
     }
   }, []);
 
@@ -118,127 +110,88 @@ export default function App() {
       const note = await createNote({ text, x: draft.x, y: draft.y });
       setDraft(null);
       await refresh();
-      void requestDecompose(note.id);
+      await handleOpenLoop(note);
     } catch (err) {
       setError((err as Error).message);
     }
   }
 
-  // LLM-proposed decomposition is the primary flow for a freshly created
-  // loop; manual crack-open stays available as a fallback the whole time
-  // (see NoteCard) and this never blocks note creation itself — a failed
-  // decompose call just leaves no proposal, which silently falls back to
-  // the manual "open" flow. See docs/DECISIONS.md ("Feature A").
-  async function requestDecompose(id: string) {
-    setProposals((prev) => ({ ...prev, [id]: "loading" }));
-    try {
-      const proposal = await decompose(id);
-      setProposals((prev) => ({ ...prev, [id]: proposal }));
-    } catch {
-      dismissProposal(id);
+  // Opening a loop (folded or already in progress) is "looking at it" for
+  // Feature B's purposes — peek fires here, same trigger point as the old
+  // "open" click, just now covering an in-progress loop's thread too, not
+  // only a never-started one. Always re-fetches messages rather than
+  // trusting a local cache, so a cascade-created message from another
+  // thread (Feature C) is picked up on open. See docs/DECISIONS.md.
+  async function handleOpenLoop(note: Note) {
+    setOpenThreadId(note.id);
+
+    if (note.status !== "done") {
+      try {
+        await peekNote(note.id);
+      } catch (err) {
+        setError((err as Error).message);
+      }
     }
-  }
 
-  function dismissProposal(id: string) {
-    setProposals((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  }
-
-  async function handleCrackOpen(id: string, steps: string[]): Promise<CrackOpenResponse | null> {
     try {
-      const result = await crackOpen(id, steps);
+      let msgs = await listMessages(note.id);
+      if (msgs.length === 0 && note.status === "folded") {
+        msgs = await startThread(note.id);
+      }
+      setThreads((prev) => ({ ...prev, [note.id]: msgs }));
+    } catch (err) {
+      setError((err as Error).message);
+    }
+
+    if (note.status !== "done") {
       await refresh();
-      return result;
-    } catch (err) {
-      setError((err as Error).message);
-      return null;
     }
   }
 
-  async function handleConfirmProposal(id: string, steps: string[]) {
-    const proposal = proposals[id];
-    const mergeSuggestion =
-      proposal !== undefined && proposal !== "loading" && proposal.type === "steps"
-        ? proposal.merge_suggestion
-        : null;
-    dismissProposal(id);
-
-    const result = await handleCrackOpen(id, steps);
-    if (!result || !mergeSuggestion) return;
-    // Only the case where the matched new step happens to be the first
-    // (front-facing) one is handled — if the user reordered/edited/
-    // deleted that exact step, or the matched existing step isn't
-    // currently fog-of-war-visible, we silently drop the suggestion
-    // rather than draw a thread to something that isn't really there.
-    // See docs/DECISIONS.md ("Feature C frontend").
-    if (result.active_child.text !== mergeSuggestion.new_step) return;
-
-    const fresh = await listNotes();
-    const existingNote = fresh.find((n) => n.id === mergeSuggestion.existing_note_id);
-    if (!existingNote) return;
-    const otherLoop = fresh.find((n) => n.id === existingNote.parent_id);
-
-    setMergeLink({
-      newId: result.active_child.id,
-      existingId: existingNote.id,
-      existingStepText: mergeSuggestion.existing_step,
-      otherLoopTitle: otherLoop?.text ?? "another loop",
-    });
+  function handleCloseThread() {
+    setOpenThreadId(null);
   }
 
-  async function handleAcceptMerge() {
-    if (!mergeLink) return;
-    try {
-      await linkNotes(mergeLink.newId, mergeLink.existingId);
-      await refresh();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setMergeLink(null);
-    }
+  function appendMessages(noteId: string, newMessages: Message[]) {
+    setThreads((prev) => ({ ...prev, [noteId]: [...(prev[noteId] ?? []), ...newMessages] }));
   }
 
-  async function handleComplete(id: string) {
+  async function handleAdvance(noteId: string) {
     try {
-      await completeNote(id);
+      const newMsgs = await advanceThread(noteId);
+      appendMessages(noteId, newMsgs);
       await refresh();
     } catch (err) {
       setError((err as Error).message);
     }
   }
 
-  async function handleAcceptDissolve(id: string) {
-    dismissProposal(id);
-    await handleComplete(id);
+  async function handleSendMessage(noteId: string, text: string) {
+    try {
+      const newMsgs = await sendThreadMessage(noteId, text);
+      appendMessages(noteId, newMsgs);
+    } catch (err) {
+      setError((err as Error).message);
+    }
   }
 
-  // Feature B: avoidance memory.
-  async function handlePeek(id: string) {
+  // Skip proposals ("this seems trivial, want to just close it out?") are
+  // dissolved via the existing complete endpoint — a skip'd loop has no
+  // children yet, so this is the same direct folded -> done path leaf
+  // notes have always had.
+  async function handleAcceptSkip(noteId: string) {
     try {
-      await peekNote(id);
+      await completeNote(noteId);
       await refresh();
     } catch (err) {
       setError((err as Error).message);
     }
   }
 
-  async function handleKeep(id: string) {
+  async function handleDeclineSkip(noteId: string, manualStepText: string) {
     try {
-      await keepNote(id);
-      await refresh();
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
-
-  // Called only after NoteCard's crumple animation finishes playing —
-  // this is the actual, irreversible delete. See docs/DECISIONS.md.
-  async function handleDissolve(id: string) {
-    try {
-      await dissolveNote(id);
+      const newMsgs = await manualFirstStep(noteId, manualStepText);
+      appendMessages(noteId, newMsgs);
       await refresh();
     } catch (err) {
       setError((err as Error).message);
@@ -259,27 +212,37 @@ export default function App() {
       )}
 
       <div className="canvas" ref={canvasRef} onDoubleClick={handleCanvasDoubleClick}>
-        {notes.map((note) => {
-          const pos = positions[note.id] ?? { x: note.x, y: note.y };
-          return (
-            <NoteCard
-              key={note.id}
-              note={note}
-              x={pos.x}
-              y={pos.y}
-              onDragStart={handleDragStart}
-              onCrackOpen={handleCrackOpen}
-              onComplete={handleComplete}
-              proposal={proposals[note.id]}
-              onConfirmProposal={handleConfirmProposal}
-              onDismissProposal={dismissProposal}
-              onAcceptDissolve={handleAcceptDissolve}
-              onPeek={handlePeek}
-              onKeep={handleKeep}
-              onDissolve={handleDissolve}
-            />
-          );
-        })}
+        {notes
+          .filter((note) => note.parent_id === null)
+          .map((note) => {
+            const pos = positions[note.id] ?? { x: note.x, y: note.y };
+            const isOpen = openThreadId === note.id;
+            return (
+              <NoteCard
+                key={note.id}
+                note={note}
+                x={pos.x}
+                y={pos.y}
+                isOpen={isOpen}
+                onDragStart={handleDragStart}
+                onOpen={handleOpenLoop}
+              >
+                {isOpen && (
+                  <ChatThread
+                    loop={note}
+                    messages={threads[note.id] ?? []}
+                    notes={notes}
+                    readOnly={note.status === "done"}
+                    onAdvance={() => handleAdvance(note.id)}
+                    onSendMessage={(text) => handleSendMessage(note.id, text)}
+                    onAcceptSkip={() => handleAcceptSkip(note.id)}
+                    onDeclineSkip={(text) => handleDeclineSkip(note.id, text)}
+                    onClose={handleCloseThread}
+                  />
+                )}
+              </NoteCard>
+            );
+          })}
 
         {draft && (
           <NewNoteInput
@@ -287,17 +250,6 @@ export default function App() {
             y={draft.y}
             onSubmit={handleCreateNote}
             onCancel={() => setDraft(null)}
-          />
-        )}
-
-        {mergeLink && (
-          <MergeThread
-            fromPos={positions[mergeLink.newId] ?? { x: 0, y: 0 }}
-            toPos={positions[mergeLink.existingId] ?? { x: 0, y: 0 }}
-            otherLoopTitle={mergeLink.otherLoopTitle}
-            existingStepText={mergeLink.existingStepText}
-            onAccept={handleAcceptMerge}
-            onDismiss={() => setMergeLink(null)}
           />
         )}
       </div>

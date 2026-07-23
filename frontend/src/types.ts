@@ -12,32 +12,21 @@ export interface Note {
   linked_note_id: string | null;
 }
 
-export interface CrackOpenResponse {
-  parent: Note;
-  active_child: Note;
-}
-
 export interface CompleteResponse {
   note: Note;
   promoted_sibling: Note | null;
   parent: Note | null;
 }
 
-export interface MergeSuggestion {
-  new_step: string;
-  existing_note_id: string;
-  existing_step: string;
-}
+export type MessageSender = "companion" | "user";
+export type MessageKind = "step" | "skip_prompt" | "user_reply" | "summary" | "done";
 
-export interface DecomposeStepsProposal {
-  type: "steps";
-  steps: string[];
-  merge_suggestion: MergeSuggestion | null;
+export interface Message {
+  id: string;
+  note_id: string;
+  sender: MessageSender;
+  kind: MessageKind;
+  text: string;
+  related_note_id: string | null;
+  created_at: string;
 }
-
-export interface DecomposeSkipProposal {
-  type: "skip";
-  suggestion: string;
-}
-
-export type DecomposeProposal = DecomposeStepsProposal | DecomposeSkipProposal;

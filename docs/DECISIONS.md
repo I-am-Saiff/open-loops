@@ -671,6 +671,193 @@ in the browser, the linked step in the other loop auto-complete and that
 loop advance to its own next step in the same action — no console
 errors throughout.
 
+## 2026-07-23 — Major redesign: chat thread replaces the step-list UI (backend)
+
+Replaced Feature A's "preview a step list, edit it, confirm" surface with
+a persistent chat thread per loop — one loop, one conversation. This is
+explicitly a presentation-layer change: `decompose`, the fog-of-war state
+machine (`crack-open`, `complete`, sibling promotion, parent
+auto-complete), stale detection, and merge detection are all reused
+byte-for-byte in their logic; only how their results reach the user
+changes.
+
+**Schema**: a new `messages` table — `id, note_id (FK, the thread this
+belongs to — always a top-level loop's id), sender (companion|user), kind,
+text, related_note_id (nullable FK), created_at`. `kind` for this first
+pass: `step` (announcing the current front-facing child — `text` is just
+that child's own `text`, already conversational, see below;
+`related_note_id` points at it), `skip_prompt` (a decompose "skip"
+proposal surfaced as chat), `user_reply` (free text the user typed),
+`summary` (the companion's reply to a `user_reply`), `done` (a loop just
+finished). `stale_prompt`/`merge_prompt` are deferred to the next entry,
+added only once something actually produces them — no unused enum
+values sitting around before they're needed.
+
+**Decompose's prompt changed, its contract didn't.** `DECOMPOSE_SYSTEM_PROMPT`
+now asks for each step to read like a text message from a friend ("first,
+prep your ingredients — chicken, onions, ginger, garlic, curry spices.
+lmk when that's done") instead of a terse bullet ("Prep ingredients") —
+same `{"type": "steps"/"skip", ...}` JSON shape as before, just different
+prose inside the strings. This is why no extra per-step LLM call is
+needed to "make messages conversational": decompose already generates
+the eventual message text up front, for every step, before any of them
+are ever shown — `_record_progress_message` (below) just copies
+`promoted_sibling.text` straight into a `Message` row when a step
+becomes active. One cost worth naming: decompose can no longer be
+regenerated per-step with fresh context (e.g. "step 3, now that step 2
+turned out differently than expected") — the whole plan is fixed at
+thread-start time, same as the old preview-based flow was, just not
+edited before commit anymore either.
+
+**The preview/confirm step is gone entirely**, not just hidden. The old
+flow was create → decompose (preview) → user edits/confirms → crack-open.
+The new flow is create → `POST /notes/{id}/thread/start`, which runs
+`_run_decompose` and *immediately* acts on the result — crack-open for a
+`steps` proposal, no notes created yet for a `skip` proposal — with no
+user decision point in between. Manual editing of individual step text
+before it's ever shown is no longer possible; if the wording is off, the
+user's only lever is the conversation itself (nothing built for that yet
+— see the frontend entry's fallback-input note).
+
+**`_run_decompose` and `_crack_open` extracted as plain functions**
+(`app/routes/notes.py`) so `app/routes/threads.py`'s
+`POST /notes/{id}/thread/start` can call the exact same code the
+standalone `POST /notes/{id}/decompose` and `PATCH
+/notes/{id}/crack-open` HTTP endpoints use — not a reimplementation, not
+an HTTP-to-HTTP call. Both raw endpoints are kept (decompose remains a
+useful side-effect-free preview if anything ever needs one again;
+crack-open remains directly callable, e.g. from tests or a future manual
+path) even though the chat flow no longer calls them over HTTP.
+
+**`_complete_note`'s signature changed**: it now takes a `messages: List[Message]`
+accumulator (mutated in place) instead of just returning
+`(promoted_sibling, parent)`. Reason: a completion can cascade into a
+*different* loop's thread entirely (a linked note in another loop
+auto-completing — Feature C), and that other thread needs its own
+`step`/`done` message the same way the primary one does. Threading a
+mutable accumulator through the recursion was simpler than returning a
+nested structure the caller would have to walk — every call site
+(`PATCH /notes/{id}/complete`, `PATCH /notes/{id}/thread/advance`) just
+passes a list and reads whatever ended up in it afterward.
+`PATCH /notes/{id}/complete`'s own response shape is unchanged (still
+`CompleteResponse`, no `messages` field) — it now has the side effect of
+writing thread messages, but that's true of the state machine generally
+now, not something that endpoint's contract needs to expose.
+
+**`PATCH /notes/{id}/thread/advance` takes a loop id, not a step id** —
+it finds that loop's current active child itself
+(`Note.parent_id == id, status == active`) rather than requiring the
+caller to track and pass a specific step's note id. The chat UI already
+knows which loop it's looking at; making it also track "which child note
+is currently live" would be redundant state to keep in sync with the
+messages it's already rendering.
+
+**The free-text summary is the one deliberate fog-of-war bypass in the
+whole app, and it's opt-in only.** `POST /notes/{id}/messages` queries
+*every* child regardless of status to build the summary context — the
+same query GET /notes deliberately excludes folded children from. This
+is intentional, not an oversight: fog-of-war exists to keep the *default*
+view from revealing the whole plan, not to make it structurally
+impossible to ask. The spec itself calls for exactly this escape hatch
+("if the user wants to see everything... type something like 'what's the
+full plan?'"). It only fires in response to the user explicitly typing
+into the thread — nothing computes or shows this unprompted.
+
+Verified live against real SQLite and the real Groq API, entirely via
+curl (frontend not built yet at this point in the work): created a loop
+and started its thread — got a genuinely conversational first message;
+advanced through all remaining steps one at a time, each arriving as a
+new message, ending in the `done` acknowledgment; confirmed the full
+message history persists in order (the scroll-up requirement); a
+different loop's thread, asked "what's the full plan?" after completing
+one step, got a `summary` message correctly describing the one done step
+in prose and the remaining ones without ever bulleting them; a trivial
+task's thread started with a `skip_prompt` instead of steps, and
+completing that loop directly (reusing the plain `/complete` endpoint
+unchanged) worked exactly like the old "accept and dissolve"; confirmed
+`thread/start` 400s on a second call, `thread/advance` 400s when there's
+no active step (the skip case), and all four new endpoints 404 for a
+missing note. Also re-verified the *existing* Feature C link+cascade
+flow still works after the `_complete_note` signature change: linked two
+active steps in different loops, advanced one loop's thread, and
+confirmed via direct API calls that *both* loops' threads received their
+own `done` message — the cascade's message-writing works even before any
+UI surfaces it, which is the next commit's job.
+
+## 2026-07-23 — Major redesign: chat thread replaces the step-list UI (frontend)
+
+**Children no longer get their own canvas card at all.** The old design
+rendered every note — top-level loop or child step — as its own
+absolutely-positioned card, with the active child appearing as a separate
+"front-facing" card elsewhere on the canvas from its parent. The chat
+redesign only ever renders top-level notes (`notes.filter(n =>
+n.parent_id === null)` in `App.tsx`); a step now only ever exists as a
+`Message` bubble inside its loop's thread. This is why `NoteCard.tsx` and
+`App.css` lost `.note-card--front` (the old front-facing-child style) and
+the folded-card `.note-card--expanded` override entirely — there's no
+child card left to be front-facing or expanded. Positions/dragging now
+only apply to loop cards, not steps.
+
+**`DecomposeProposalPanel.tsx`, `StaleNotePrompt.tsx`, and
+`MergeThread.tsx` were deleted, not just unused.** All three were built
+around the old per-child-card model (an editable list overlay on a
+folded card; a sticky note attached to a specific card; a line drawn
+between two specific cards) and can't function once children don't have
+cards. This is a genuine, temporary regression in Feature B/C's UI
+surface: as of this commit, stale loops and merge suggestions are fully
+computed and available from the backend but **not shown anywhere in the
+UI** — that's deliberately the next commit's job (re-presenting them as
+in-thread proactive messages, which needs the chat surface built first).
+Left `linkNotes`/`peekNote`/`keepNote`/`dissolveNote` in `api.ts` even
+though nothing calls them for one commit — they're not dead code the way
+an orphaned component file would be, they're infrastructure the very
+next commit wires back up.
+
+**One thread open at a time** (`openThreadId: string | null` in
+`App.tsx`), matching "the one piece of paper in front of you" — opening
+a different loop's thread implicitly closes whichever was open, rather
+than letting the canvas fill with multiple expanded chat cards.
+
+**Done loops stay reachable**: a "view thread" link on a completed
+loop's muted card opens it read-only (no Done button, no input) —
+otherwise all that persisted history would become permanently
+unreachable the moment a loop finished, which felt wrong for a
+conversation model that explicitly promises "scroll up to see
+everything."
+
+**Bug caught and fixed during live testing, not hypothetical**: the Done
+button and the skip accept/decline buttons were originally gated on
+`messages[messages.length - 1].kind` — "is the *last* message a step /
+skip_prompt." Asking "what's the full plan?" appends a `user_reply` +
+`summary` after the current step message, which silently pushed the Done
+button off the bottom of the interactive surface with no way back to it
+(confirmed by reproducing it in the browser, not just reasoning about
+it). Fixed by checking the loop's actual current state instead of
+message position: `showDoneButton` now looks for an `active` child of
+this loop in `notes` directly, and `showSkipActions` checks `loop.status
+=== "folded"` plus the presence of a `skip_prompt` message anywhere in
+the thread — both survive an arbitrary number of summary round-trips
+happening in between.
+
+Verified live in the browser end-to-end (backend already verified via
+curl in the entry above; this pass exercised the same flows through
+real UI interaction): created a loop, watched the first conversational
+message arrive, tapped "done" through multiple steps watching each new
+bubble appear while all history stayed visible and scrollable; asked
+"what's the full plan?" mid-thread and got a prose summary, then
+confirmed via reproduction + fix that the Done button survived it;
+completed the loop fully and watched it collapse to the muted
+struck-through card with a working "view thread" link back into the
+same persisted history; separately walked the skip path — a trivial
+task's thread opened with a skip_prompt and reply buttons, declining
+opened a manual step input, submitting it produced a real step message
+with its own Done button, confirmed via direct API check that real
+notes were created. No console errors at any point (double-checked
+against a page log spanning the whole edit session — the only errors
+present were transient HMR failures from mid-refactor file edits, not
+from the final state, confirmed by clearing the log and reloading
+clean).
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
@@ -707,3 +894,9 @@ errors throughout.
 - No persistent visual indicator for already-linked notes — the
   connecting thread only shows during the initial accept/decline moment,
   not on subsequent page loads.
+- **Transitional**: as of the chat-thread redesign's first commit, stale
+  loops and merge suggestions are fully computed backend-side but not
+  shown anywhere in the UI — the old card-based Feature B/C UI was
+  deleted (it can't work once steps have no cards of their own) and its
+  replacement (in-thread proactive messages) is explicitly the next
+  commit's scope, not done yet.

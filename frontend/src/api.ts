@@ -1,4 +1,4 @@
-import type { CompleteResponse, CrackOpenResponse, DecomposeProposal, Note } from "./types";
+import type { CompleteResponse, Message, Note } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -30,22 +30,9 @@ export function createNote(input: {
   });
 }
 
-export function crackOpen(id: string, steps: string[]): Promise<CrackOpenResponse> {
-  return request<CrackOpenResponse>(`/notes/${id}/crack-open`, {
-    method: "PATCH",
-    body: JSON.stringify({ steps }),
-  });
-}
-
 export function completeNote(id: string): Promise<CompleteResponse> {
   return request<CompleteResponse>(`/notes/${id}/complete`, {
     method: "PATCH",
-  });
-}
-
-export function decompose(id: string): Promise<DecomposeProposal> {
-  return request<DecomposeProposal>(`/notes/${id}/decompose`, {
-    method: "POST",
   });
 }
 
@@ -71,5 +58,33 @@ export function linkNotes(id: string, otherNoteId: string): Promise<Note> {
   return request<Note>(`/notes/${id}/link`, {
     method: "PATCH",
     body: JSON.stringify({ other_note_id: otherNoteId }),
+  });
+}
+
+// Chat thread — see docs/DECISIONS.md ("Chat thread: schema and orchestration").
+
+export function listMessages(noteId: string): Promise<Message[]> {
+  return request<Message[]>(`/notes/${noteId}/messages`);
+}
+
+export function startThread(noteId: string): Promise<Message[]> {
+  return request<Message[]>(`/notes/${noteId}/thread/start`, { method: "POST" });
+}
+
+export function advanceThread(noteId: string): Promise<Message[]> {
+  return request<Message[]>(`/notes/${noteId}/thread/advance`, { method: "PATCH" });
+}
+
+export function sendThreadMessage(noteId: string, text: string): Promise<Message[]> {
+  return request<Message[]>(`/notes/${noteId}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+}
+
+export function manualFirstStep(noteId: string, text: string): Promise<Message[]> {
+  return request<Message[]>(`/notes/${noteId}/thread/manual-step`, {
+    method: "POST",
+    body: JSON.stringify({ text }),
   });
 }

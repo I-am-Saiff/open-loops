@@ -53,3 +53,47 @@ class Note(Base):
 
 sa.Index("notes_parent_id_idx", Note.parent_id)
 sa.Index("notes_parent_id_status_idx", Note.parent_id, Note.status)
+
+
+class MessageSender(str, enum.Enum):
+    companion = "companion"
+    user = "user"
+
+
+class MessageKind(str, enum.Enum):
+    # A companion message announcing the current front-facing step —
+    # text is just that step note's own text (already conversational,
+    # from decompose). related_note_id points at the step note.
+    step = "step"
+    # A companion message offering to close out a trivial task instead
+    # of proposing steps (decompose's "skip" proposal, surfaced as chat).
+    skip_prompt = "skip_prompt"
+    # Free-text the user typed into the thread.
+    user_reply = "user_reply"
+    # Companion's plain-sentence reply to a user_reply, covering
+    # everything done + everything ahead — the one deliberate fog-of-war
+    # bypass, only on explicit request. See docs/DECISIONS.md.
+    summary = "summary"
+    # Companion's acknowledgment that a loop just fully completed.
+    done = "done"
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = sa.Column(sa.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    # The THREAD this message belongs to — always a top-level loop's id,
+    # one thread per loop, regardless of which step the message concerns.
+    note_id = sa.Column(sa.String, sa.ForeignKey("notes.id", ondelete="CASCADE"), nullable=False)
+    sender = sa.Column(sa.Enum(MessageSender), nullable=False)
+    kind = sa.Column(sa.Enum(MessageKind), nullable=False)
+    text = sa.Column(sa.String, nullable=False)
+    # For kind='step': the step note this message announces. Nullable —
+    # not every kind references a note.
+    related_note_id = sa.Column(
+        sa.String, sa.ForeignKey("notes.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = sa.Column(sa.DateTime, nullable=False, default=datetime.utcnow)
+
+
+sa.Index("messages_note_id_idx", Message.note_id)
