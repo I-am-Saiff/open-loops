@@ -69,6 +69,69 @@
   background-color: var(--paper);
 }
 
+/* ---------- notebook page tabs (version gallery) ---------- */
+/* Index tabs sticking out of the right edge of the notebook — the four
+   versions are four pages of the same book, so the switcher is the
+   physical thing you'd grab to flip between them. Inactive tabs sit
+   tucked toward the edge like the tabs of closed pages; the current one
+   is pulled out and sits flush, like the page you're holding open. See
+   docs/DECISIONS.md ("Version gallery"). */
+
+.page-tabs {
+  position: fixed;
+  top: 130px;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.page-tab {
+  display: block;
+  padding: 7px 16px 7px 14px;
+  border: 1px solid var(--border);
+  border-right: none;
+  border-radius: 9px 0 0 7px;
+  background: var(--fold);
+  color: var(--ink-dim);
+  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-size: 14px;
+  text-align: left;
+  box-shadow: var(--shadow-soft);
+  transform: translateX(7px);
+  transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.page-tab:hover {
+  transform: translateX(3px);
+}
+
+.page-tab--current {
+  background: var(--card-front);
+  color: var(--accent);
+  border-color: var(--accent);
+  transform: translateX(0);
+  box-shadow: var(--shadow-lifted);
+}
+
+.page-placeholder {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  position: relative;
+}
+
+.page-placeholder p {
+  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-size: 18px;
+  color: var(--ink-dim);
+  opacity: 0.6;
+  transform: rotate(-1.5deg);
+}
+
 /* ---------- note cards ---------- */
 
 .note-card {

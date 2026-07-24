@@ -1048,6 +1048,36 @@ open thread's "done"/close controls shows the accent glow, not the
 browser default; plain mouse clicks show no ring at all. No console
 errors.
 
+## 2026-07-25 — Version gallery: four pages of one notebook, tabs drawn as the thing you'd grab
+
+Adding a 4-page gallery where each page renders the same loops data
+through a different anti-avoidance mechanic (v1 companion / v2 ink /
+v3 dice / v4 fade). Navigation decisions:
+
+- **Tabs are notebook index tabs on the right edge, not a navbar.** The
+  framing is "four pages of the same physical notebook," so the
+  switcher is drawn as the thing you'd actually grab to flip pages:
+  paper-colored tabs sticking out of the right edge, inactive ones
+  tucked toward the edge (`translateX(7px)`, dim `--fold` paper),
+  the current one pulled flush and accent-bordered like the page
+  you're holding open. Hover pulls a tab halfway out (`translateX(3px)`,
+  180ms ease) — the "about to flip" feel.
+- **Page state is client-only `useState`, no router.** Four values, no
+  deep-linking requirement, no URL semantics worth designing yet;
+  adding react-router for this would be infrastructure before need.
+- **All pages share one `notes` state in App; `refresh()` re-runs on
+  every page flip.** Same backend, same data — a loop created on v1
+  must appear on v2–v4 immediately, and a cheap refetch on flip is
+  simpler and more correct than trying to keep four pages' caches
+  coherent.
+- **v1 is untouched behaviorally** — its canvas JSX just moved inside a
+  `{page === "v1" && ...}` guard; every handler, state hook, and the
+  ChatThread wiring is byte-identical.
+
+Verified live: tabs render, v2 flip shows placeholder, flipping back to
+v1 and opening a loop's thread works exactly as before (peek + messages
++ done button). No console errors.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user

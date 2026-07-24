@@ -18,6 +18,8 @@ import {
 import { ChatThread } from "./ChatThread";
 import { NewNoteInput } from "./NewNoteInput";
 import { NoteCard } from "./NoteCard";
+import { PageTabs } from "./PageTabs";
+import type { PageId } from "./PageTabs";
 import type { Message, Note } from "./types";
 import "./App.css";
 
@@ -36,6 +38,10 @@ interface Draft extends Point {
 const DISSOLVE_ANIMATION_MS = 450;
 
 export default function App() {
+  // Which notebook page is showing — four renderings of the same loops
+  // data, one per anti-avoidance mechanic. See docs/DECISIONS.md
+  // ("Version gallery").
+  const [page, setPage] = useState<PageId>("v1");
   const [notes, setNotes] = useState<Note[]>([]);
   // Drag position overrides, keyed by note id. Local/session-only — there
   // is no endpoint yet to persist x/y after a drag. See docs/DECISIONS.md.
@@ -73,9 +79,12 @@ export default function App() {
     }
   }, []);
 
+  // Re-fetch on every page flip, not just on mount — all four pages
+  // render the same loops, so a loop created on one page must show up
+  // when flipping to another.
   useEffect(() => {
     refresh();
-  }, [refresh]);
+  }, [refresh, page]);
 
   function toCanvasCoords(clientX: number, clientY: number): Point {
     const el = canvasRef.current;
@@ -281,8 +290,10 @@ export default function App() {
     <div className="app">
       <header className="app__header">
         <h1>Open Loops</h1>
-        <p className="app__hint">Double-click empty canvas to add a loop.</p>
+        {page === "v1" && <p className="app__hint">Double-click empty canvas to add a loop.</p>}
       </header>
+
+      <PageTabs current={page} onChange={setPage} />
 
       {error && (
         <div className="app__error" onClick={() => setError(null)}>
@@ -290,6 +301,13 @@ export default function App() {
         </div>
       )}
 
+      {page !== "v1" && (
+        <div className="page-placeholder">
+          <p>this page hasn’t been written yet…</p>
+        </div>
+      )}
+
+      {page === "v1" && (
       <div className="canvas" ref={canvasRef} onDoubleClick={handleCanvasDoubleClick}>
         {notes
           .filter((note) => note.parent_id === null)
@@ -339,6 +357,7 @@ export default function App() {
           />
         )}
       </div>
+      )}
     </div>
   );
 }
