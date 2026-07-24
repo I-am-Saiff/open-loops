@@ -16,6 +16,7 @@ import {
   startThread,
 } from "./api";
 import { ChatThread } from "./ChatThread";
+import { InkPage } from "./InkPage";
 import { NewNoteInput } from "./NewNoteInput";
 import { NoteCard } from "./NoteCard";
 import { PageTabs } from "./PageTabs";
@@ -301,7 +302,11 @@ export default function App() {
         </div>
       )}
 
-      {page !== "v1" && (
+      {page === "v2" && (
+        <InkPage notes={notes} refresh={refresh} onError={setError} />
+      )}
+
+      {(page === "v3" || page === "v4") && (
         <div className="page-placeholder">
           <p>this page hasn’t been written yet…</p>
         </div>

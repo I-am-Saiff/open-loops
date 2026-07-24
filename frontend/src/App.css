@@ -409,6 +409,132 @@
   font-weight: bold;
 }
 
+/* ---------- v2: ink reveal ---------- */
+/* Curiosity replaces dread: the next step exists only as illegible
+   ghost ink, developed by rubbing. Blur/opacity curves and their
+   easings are the mechanic, not decoration — see docs/DECISIONS.md
+   ("v2 ink reveal"). */
+
+.ink-page {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 44px 120px 60px 80px;
+  max-width: 720px;
+}
+
+.ink-page__hint {
+  margin: 0 0 34px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--ink-dim);
+  opacity: 0.75;
+}
+
+.ink-page__empty {
+  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-size: 17px;
+  color: var(--ink-dim);
+}
+
+.ink-entry {
+  margin-bottom: 38px;
+}
+
+.ink-entry__title {
+  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-size: 20px;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.ink-entry__crack {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: Georgia, serif;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--ink-dim);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.ink-ghost-row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding-left: 22px;
+  /* Rubbing is a drag gesture — without this the browser treats it as
+     text selection and paints highlight rectangles mid-rub. */
+  user-select: none;
+}
+
+/* The ghost stroke. Blur + opacity are driven per-pointermove from JS
+   (inline style) while developing; the smudge backdrop sells "there is
+   ink here" before a single word is legible. touch-action: none so
+   rubbing works with a finger too, instead of scrolling the page. */
+.ink-ghost {
+  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-size: 19px;
+  line-height: 1.4;
+  color: var(--ink);
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: radial-gradient(ellipse at 40% 55%, rgba(58, 50, 38, 0.09), transparent 75%);
+  user-select: none;
+  touch-action: none;
+  cursor: cell;
+}
+
+/* Ink settling: the final snap to legibility gets a short transition so
+   full development reads as the ink drying onto the page, not a style
+   flip. */
+.ink-ghost--revealed {
+  background: none;
+  cursor: default;
+  filter: none;
+  opacity: 1;
+  transition: filter 0.3s ease, opacity 0.3s ease;
+}
+
+.ink-done {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-size: 16px;
+  color: var(--accent);
+  white-space: nowrap;
+  animation: ink-done-in 0.4s ease both;
+}
+
+@keyframes ink-done-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.ink-page__done {
+  margin-top: 50px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+
+.ink-page__done-line {
+  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-size: 15px;
+  color: var(--ink-dim);
+  text-decoration: line-through;
+  text-decoration-color: var(--accent);
+  opacity: 0.55;
+  margin-bottom: 6px;
+}
+
 /* ---------- dissolve ("let it go", Feature B in-thread) ---------- */
 /* Duration mirrored in App.tsx's DISSOLVE_ANIMATION_MS — the actual
    delete is deferred until this finishes playing, like tearing out a

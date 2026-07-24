@@ -1078,6 +1078,60 @@ Verified live: tabs render, v2 flip shows placeholder, flipping back to
 v1 and opening a loop's thread works exactly as before (peek + messages
 + done button). No console errors.
 
+## 2026-07-25 — v2 ink reveal: the mechanic is the easing curves
+
+v2 replaces dread with curiosity: the next step exists on the page but
+is illegible — ghost ink, developed by rubbing. Every implementation
+choice below is a psychology decision first:
+
+- **Reveal effort: ~600px of pointer travel, per-event delta capped at
+  40px.** 600px is 2-3 deliberate swipes across a line of text — enough
+  that reading the step is something you *did*, not something done to
+  you (effort creates ownership of the reveal), but under a second of
+  actual work. The 40px per-event cap means a single fast flick can't
+  cash in the whole reveal: rubbing has to be sustained, like an actual
+  scratch card. Progress never decays — ink doesn't un-develop, and a
+  partial accidental reveal (mousing across the page) is a *feature*:
+  a half-stirred smudge is more enticing than an untouched one.
+- **Blur eases OUT, opacity eases IN — deliberately opposite curves.**
+  Blur falls fast at the start (easeOutQuad from 7px): the very first
+  rub visibly stirs the ink, which is the hook — instant feedback that
+  rubbing works. But opacity blooms late (easeInQuad from 0.25): actual
+  legibility only lands near the end, so the payoff (reading the words)
+  stays at the finish line where it pulls you through. One linear curve
+  for both would either spoil the text early or make early rubbing feel
+  dead.
+- **The reveal snap gets a 300ms ease transition** ("ink drying"), and
+  the ✓ done affordance fades in over 400ms *after* legibility — the
+  action appears as a consequence of reading, not alongside it.
+- **CSS blur/opacity on the whole stroke, not canvas pixel-scratching.**
+  Per the spec's implementation guidance — pointer-travel accumulation
+  driving `filter: blur()` + `opacity` inline styles sells the develop
+  effect fully; positional scratch-through (only the rubbed region
+  clears) would need canvas compositing for marginal psychological
+  gain, since the unit of curiosity is the sentence, not the pixel.
+- **Only the current step exists visually, ever** — future steps aren't
+  rendered blurred, they aren't rendered at all (the API never sends
+  them; fog-of-war already guarantees this server-side). A folded loop
+  shows only a "crack it open" affordance which reuses the same
+  thread/start orchestration as v1, so a skip-proposal surfaces here
+  too: the *suggestion* becomes the ghost stroke, and revealing it
+  uncovers "you could just call this done" with the same folded→done
+  completion path v1's accept-skip uses.
+- **Fully developing a stroke fires one `peek`** — same avoidance-memory
+  signal as v1's thread-open, at the moment that means the same thing
+  ("I looked at what this needs"). Rubbing partway doesn't peek; you
+  haven't seen it yet.
+- **Advance is `thread/advance`, not raw complete** — so the v1 chat
+  thread stays in sync: a step completed by rubbing-and-checking on v2
+  shows up as the same done/step messages in the loop's thread.
+  Verified live: completed a step on v2, flipped to v1, thread showed
+  both the finished step and the new one.
+
+Known nit found live: drag-rubbing text-selected the ✓ done button
+(blue highlight mid-rub) — fixed with `user-select: none` on the whole
+ghost row, not just the stroke.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
