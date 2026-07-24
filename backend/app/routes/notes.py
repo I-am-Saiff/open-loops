@@ -133,6 +133,7 @@ def _to_out(db: Session, note: Note) -> NoteOut:
         created_at=note.created_at,
         stale=_is_stale(db, note),
         linked_note_id=note.linked_note_id,
+        last_peeked_at=note.last_peeked_at,
     )
 
 

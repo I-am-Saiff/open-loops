@@ -1177,6 +1177,58 @@ empty, and the notebook picks. Mechanic-to-implementation mapping:
   and completed — backend showed the step done and the next sibling
   promoted.
 
+## 2026-07-25 — v4 shrinking page: decay curve, demo compression, and what counts as a touch
+
+v4 makes neglect visible instead of nagging about it: every active
+loop's current step is written on the page, and its ink opacity is a
+function of time since the loop was last touched. Mapping decisions:
+
+- **DEMO-COMPRESSED TIMESCALE**: full fade takes **4 minutes**
+  (`FADE_WINDOW_MS`), purely so the mechanic is demonstrable in one
+  sitting. The real product would fade over days — the same scale
+  Feature B's stale detection already uses (3 days). This constant is
+  the single knob; nothing else in the page knows the timescale.
+- **Decay eases IN (`t^1.7`), floor at 0.08, never zero.** Fresh ink
+  barely fades for a while — a step you touched moments ago shouldn't
+  look mortal, or the page reads as punishing. The acceleration comes
+  late, creating a rescue window that feels quietly urgent with no
+  badge, counter, or red (the spec's hard constraint — even the ✓
+  complete affordance uses plain ink here, not the accent used
+  everywhere else in the app). The floor exists because the page never
+  erases anything by itself: it only ever *asks*, via the whisper.
+- **Continuity: opacity recomputes every 5s, CSS bridges with a 1s
+  linear transition** — the ink reads as continuously dying rather than
+  stepping, without a 60fps JS loop.
+- **"Last touch" = max(loop.created_at, loop.last_peeked_at,
+  step.created_at).** Reuses Feature B's peek timestamp (newly exposed
+  in `NoteOut` as `last_peeked_at` — the one backend change in this
+  commit), so a touch on ANY page counts: v1 thread-open, v2 full
+  reveal, v3 landed dare. The step's own created_at is in the max so a
+  freshly promoted step starts at full ink even if the loop's peek is
+  old. Backend timestamps are naive UTC, so the frontend parses them
+  with an explicit `Z` suffix — parsing raw would skew every elapsed
+  computation by the local UTC offset.
+- **The whisper state** (elapsed past the window): the line sits at
+  floor opacity and two choices appear in the page's smallest voice —
+  "touch it to re-ink" (a `peek`: resets the clock, and by Feature B's
+  own semantics recommits you) or "let it go." Letting go plays a slow
+  even fade-to-blank with the faintest blur (`fade-reclaim`, 900ms
+  ease-out) and then DELETEs — same animate-then-delete pattern as v1's
+  crumple but deliberately opposite in feeling: v1 destroys a note, v4's
+  page *absorbs* it.
+- **Completing re-inks permanently**: done steps render as full-opacity
+  bold strikethrough strokes that never fade — the record of what you
+  did is the one thing the page never forgets. "Done" also fires a peek
+  (completing is the strongest touch there is) before the shared
+  `thread/advance`.
+
+Verified live: mid-fade ink at partial opacity; ✓ completed a step
+(done-stroke appeared, next step arrived at full ink); backdated
+timestamps in SQLite to force the whisper (test-data shortcut for the
+4-minute wait); "touch it to re-ink" restored full ink; "let it go"
+played the reclaim fade and deleted the loop, landing on the blank-page
+empty state. Clean console on a fresh load.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user

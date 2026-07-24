@@ -17,6 +17,7 @@ import {
 } from "./api";
 import { ChatThread } from "./ChatThread";
 import { DicePage } from "./DicePage";
+import { FadePage } from "./FadePage";
 import { InkPage } from "./InkPage";
 import { NewNoteInput } from "./NewNoteInput";
 import { NoteCard } from "./NoteCard";
@@ -312,9 +313,7 @@ export default function App() {
       )}
 
       {page === "v4" && (
-        <div className="page-placeholder">
-          <p>this page hasn’t been written yet…</p>
-        </div>
+        <FadePage notes={notes} refresh={refresh} onError={setError} />
       )}
 
       {page === "v1" && (

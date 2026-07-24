@@ -24,6 +24,10 @@ class NoteOut(BaseModel):
     stale: bool
     # Feature C: set by PATCH /notes/{id}/link — see docs/DECISIONS.md.
     linked_note_id: Optional[UUID]
+    # When this note was last "looked at" (Feature B's peek). Exposed for
+    # the v4 fade page, whose ink opacity is a function of time since
+    # last interaction — see docs/DECISIONS.md ("v4 shrinking page").
+    last_peeked_at: Optional[datetime]
 
 
 class CrackOpenRequest(BaseModel):

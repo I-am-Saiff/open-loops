@@ -10,6 +10,9 @@ export interface Note {
   created_at: string;
   stale: boolean;
   linked_note_id: string | null;
+  // When this note was last "peeked" (Feature B) — naive-UTC ISO string,
+  // null if never. Drives the v4 fade page's ink opacity.
+  last_peeked_at: string | null;
 }
 
 export interface CompleteResponse {
