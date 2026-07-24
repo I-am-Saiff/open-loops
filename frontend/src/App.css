@@ -535,6 +535,225 @@
   margin-bottom: 6px;
 }
 
+/* ---------- v3: dice roll ---------- */
+/* Surrender the choosing: one die, drawn in ink. Roll timing and the
+   dare's overshoot easing are the mechanic — see docs/DECISIONS.md
+   ("v3 dice roll"). */
+
+.dice-page {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 11vh;
+  gap: 34px;
+}
+
+.dice-page__die-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Hand-drawn die: uneven corner radii so it reads as sketched, not
+   rendered. */
+.die {
+  width: 92px;
+  height: 92px;
+  padding: 14px;
+  background: var(--card-front);
+  border: 2.5px solid var(--ink);
+  border-radius: 22px 18px 24px 17px;
+  box-shadow: var(--shadow-soft);
+  transform: rotate(-2deg);
+  transition: transform 0.3s ease, opacity 0.3s ease, filter 0.3s ease;
+}
+
+.die:hover:not(:disabled) {
+  transform: rotate(-2deg) translateY(-3px);
+  box-shadow: var(--shadow-lifted);
+}
+
+.die--rolling {
+  animation: dice-roll 900ms cubic-bezier(0.22, 0.85, 0.35, 1);
+}
+
+/* Ends at 718deg = visually the resting -2deg, so the animation can
+   fill none and hand back to the base transform without a jump. */
+@keyframes dice-roll {
+  0% {
+    transform: rotate(-2deg) translateY(0);
+  }
+  28% {
+    transform: rotate(250deg) translateY(-46px) scale(1.06);
+  }
+  55% {
+    transform: rotate(540deg) translateY(0) scale(1);
+  }
+  76% {
+    transform: rotate(650deg) translateY(-14px);
+  }
+  100% {
+    transform: rotate(718deg) translateY(0);
+  }
+}
+
+.die--small {
+  transform: rotate(-2deg) scale(0.6);
+}
+
+.die--small:hover:not(:disabled) {
+  transform: rotate(-2deg) scale(0.6) translateY(-4px);
+}
+
+.die--spent {
+  opacity: 0.35;
+  filter: grayscale(0.7);
+  cursor: default;
+}
+
+.die__face {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  width: 100%;
+  height: 100%;
+}
+
+.die__pip {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--ink);
+  align-self: center;
+  justify-self: center;
+}
+
+/* Classic pip layouts per face. */
+.die__face--1 .die__pip:nth-child(1) { grid-area: 2 / 2; }
+.die__face--2 .die__pip:nth-child(1) { grid-area: 1 / 1; }
+.die__face--2 .die__pip:nth-child(2) { grid-area: 3 / 3; }
+.die__face--3 .die__pip:nth-child(1) { grid-area: 1 / 1; }
+.die__face--3 .die__pip:nth-child(2) { grid-area: 2 / 2; }
+.die__face--3 .die__pip:nth-child(3) { grid-area: 3 / 3; }
+.die__face--4 .die__pip:nth-child(1) { grid-area: 1 / 1; }
+.die__face--4 .die__pip:nth-child(2) { grid-area: 1 / 3; }
+.die__face--4 .die__pip:nth-child(3) { grid-area: 3 / 1; }
+.die__face--4 .die__pip:nth-child(4) { grid-area: 3 / 3; }
+.die__face--5 .die__pip:nth-child(1) { grid-area: 1 / 1; }
+.die__face--5 .die__pip:nth-child(2) { grid-area: 1 / 3; }
+.die__face--5 .die__pip:nth-child(3) { grid-area: 2 / 2; }
+.die__face--5 .die__pip:nth-child(4) { grid-area: 3 / 1; }
+.die__face--5 .die__pip:nth-child(5) { grid-area: 3 / 3; }
+.die__face--6 .die__pip:nth-child(1) { grid-area: 1 / 1; }
+.die__face--6 .die__pip:nth-child(2) { grid-area: 1 / 3; }
+.die__face--6 .die__pip:nth-child(3) { grid-area: 2 / 1; }
+.die__face--6 .die__pip:nth-child(4) { grid-area: 2 / 3; }
+.die__face--6 .die__pip:nth-child(5) { grid-area: 3 / 1; }
+.die__face--6 .die__pip:nth-child(6) { grid-area: 3 / 3; }
+
+.dice-page__whisper {
+  margin: 0;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--ink-dim);
+}
+
+/* "no take-backs" — a margin scribble, not a system message. */
+.dice-page__whisper--rules {
+  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  transform: rotate(-2deg);
+  color: var(--accent);
+}
+
+.dare {
+  max-width: 620px;
+  text-align: center;
+  padding: 0 30px;
+}
+
+/* The dare slams onto the page: overshoot easing (spring past 1, snap
+   back) so it lands like something thrown, not something faded in. */
+.dare__step {
+  margin: 0;
+  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-size: 30px;
+  font-weight: bold;
+  line-height: 1.3;
+  color: var(--ink);
+  transform: rotate(-1deg);
+  animation: dare-in 380ms cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+@keyframes dare-in {
+  from {
+    opacity: 0;
+    transform: rotate(-5deg) scale(1.5);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-1deg) scale(1);
+  }
+}
+
+.dare__source {
+  margin: 10px 0 0;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--ink-dim);
+}
+
+.dare__actions {
+  margin-top: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+}
+
+.dare__done {
+  border: none;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 3px 8px 3px 8px;
+  padding: 8px 22px;
+  font-family: Georgia, serif;
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 0.4px;
+  box-shadow: var(--shadow-soft);
+}
+
+.dare__decline {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: Georgia, serif;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--ink-dim);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* "Not today" folds the dare flat into the page — a quiet put-away,
+   nothing like v1's crumple (nothing is being destroyed here). */
+.dare--folding {
+  transform-origin: center bottom;
+  animation: dare-fold 400ms ease-in both;
+}
+
+@keyframes dare-fold {
+  to {
+    opacity: 0;
+    transform: translateY(26px) scaleY(0.06);
+  }
+}
+
 /* ---------- dissolve ("let it go", Feature B in-thread) ---------- */
 /* Duration mirrored in App.tsx's DISSOLVE_ANIMATION_MS — the actual
    delete is deferred until this finishes playing, like tearing out a

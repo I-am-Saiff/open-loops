@@ -1132,6 +1132,51 @@ Known nit found live: drag-rubbing text-selected the ✓ done button
 (blue highlight mid-rub) — fixed with `user-select: none` on the whole
 ghost row, not just the stroke.
 
+## 2026-07-25 — v3 dice roll: surrender the choosing, and what the house rules protect
+
+v3 removes the flinch by removing the decision: the page is nearly
+empty, and the notebook picks. Mechanic-to-implementation mapping:
+
+- **The roll takes 900ms and physically tumbles** (two full spins with
+  two decreasing hops, easing `cubic-bezier(0.22, 0.85, 0.35, 1)` —
+  fast launch, long settle). Selection is instant, but showing the
+  answer instantly would read as a *lookup*, and the psychology needs a
+  *ritual*: the anticipation gap is where "I chose" gets replaced by
+  "the die chose." The keyframes end at 718deg ≡ the die's resting
+  -2deg tilt, so the animation can fill-none and hand back to the base
+  transform without a visual jump.
+- **The dare slams in with overshoot** (`cubic-bezier(0.2, 1.4, 0.4, 1)`,
+  380ms, from scale 1.5): thrown, not faded in — a dare should land
+  with weight. It renders as one bold handwritten line with a small
+  "from “loop”" attribution, and *no other loops anywhere on the page*:
+  scope can't trigger dread if it isn't rendered.
+- **One re-roll, then the die grays out with a handwritten "no
+  take-backs" scribble** — enforced playfully (accent-ink margin note,
+  not an error message) but enforced for real (the button disables).
+  Endless re-rolling would turn the page back into browsing-with-extra
+  -steps, which is exactly the choosing this page exists to remove.
+  The re-roll also excludes the current dare when other candidates
+  exist — re-rolling into the same step would feel rigged.
+- **"Not today" resets the roll budget.** Folding the dare away
+  (`scaleY` collapse, 400ms ease-in — a quiet put-away, deliberately
+  nothing like v1's crumple, since nothing is being destroyed) writes
+  *nothing* to the backend and returns the die. Declining by name is an
+  honest exit, not a dodge, so it buys the dice back; the friction of
+  having to say "not today" (rather than re-roll) is the point.
+- **The die only chooses among loops that already have a face-up
+  step.** Folded loops would need an LLM decompose mid-roll; more
+  importantly, the page's contract is zero deciding, and "should this
+  loop get cracked open?" is a decision. Randomness is plain frontend
+  `Math.random` over active loops' current steps — existing endpoints
+  only, per spec.
+- **A landed dare fires one `peek`** (the notebook showed you the
+  step), and "done" goes through `thread/advance` so the v1 chat
+  thread records the completion — same cross-page consistency contract
+  as v2. Verified live: rolled, re-rolled into "no take-backs",
+  declined with "not today" (die returned, budget reset), rolled again
+  and completed — backend showed the step done and the next sibling
+  promoted.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
