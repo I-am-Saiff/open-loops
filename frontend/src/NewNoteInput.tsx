@@ -27,7 +27,7 @@ export function NewNoteInput({ x, y, onSubmit, onCancel }: Props) {
       className="new-note-input"
       style={{ left: x, top: y }}
       value={text}
-      placeholder="New loop…"
+      placeholder="write anything…"
       onChange={(e) => setText(e.target.value)}
       onPointerDown={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}

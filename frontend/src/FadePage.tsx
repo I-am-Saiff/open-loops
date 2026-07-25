@@ -48,7 +48,11 @@ export function FadePage({ notes, refresh, onError }: Props) {
     return () => window.clearInterval(id);
   }, []);
 
-  const activeLoops = notes.filter((n) => n.parent_id === null && n.status === "active");
+  // Notebook first: plain notes are ink and never fade — only cracked
+  // loops are subject to the page's forgetting.
+  const activeLoops = notes.filter(
+    (n) => n.parent_id === null && n.kind === "loop" && n.status === "active"
+  );
 
   // Time since the loop was last touched — a peek from ANY page counts
   // (v1 thread-open, v2 full reveal, v3 landed dare), as does the

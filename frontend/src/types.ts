@@ -1,5 +1,10 @@
 export type NoteStatus = "folded" | "active" | "done";
 
+// Notebook first: 'plain' is ink on paper — no machinery, no status
+// semantics, no mechanics. 'loop' is a note that was cracked on
+// consent. See docs/DECISIONS.md ("Notebook first").
+export type NoteKind = "plain" | "loop";
+
 export interface Note {
   id: string;
   parent_id: string | null;
@@ -7,6 +12,10 @@ export interface Note {
   x: number;
   y: number;
   status: NoteStatus;
+  kind: NoteKind;
+  // null = not (successfully) classified. true only surfaces the quiet
+  // crack whisper on a plain note.
+  task_like: boolean | null;
   created_at: string;
   stale: boolean;
   linked_note_id: string | null;

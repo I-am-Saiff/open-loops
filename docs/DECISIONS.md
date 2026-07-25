@@ -1292,6 +1292,73 @@ the summary path regression (a loop with children still gets a
 summary), and that the "hey" loop appears in no v2 ghost stroke, v3
 dice pool, or v4 fade line. No console errors.
 
+## 2026-07-25 — Notebook first: plain ink by default, machinery only on consent
+
+Identity correction: the app had drifted into feeling like an AI
+chatbot — every keystroke summoned a companion. Reset: it is a
+notebook (think Apple Notes). Writing and saving text is the primary
+act; the loop machinery is a feature that activates only on consent,
+only for task-like notes.
+
+- **`Note.kind`: `plain` | `loop`, default `plain`.** A plain note is
+  ink on paper — no status semantics, no fold dimming, no dog-ear, no
+  strike-through, no thread, editable in place (new
+  `PATCH /notes/{id}`, double-click to edit; editing resets
+  `task_like` so re-classification reads the new text). The ONLY paths
+  from plain to loop are the whisper tap and the note menu's "crack
+  this" — both call thread/start, and the kind flip happens server-side
+  there (plus inside `_crack_open`, covering the manual-step and raw
+  HTTP paths; the skip path needs the thread/start flip since it never
+  reaches `_crack_open`). Nothing ever flips a note back.
+- **Exclusion is enforced at both layers.** Backend: `_is_stale`
+  returns False for non-loops, `_backlog_pressure` counts only loops
+  (a page full of journaling is not backlog), and merge detection
+  already only scans active loops. Frontend: v2/v3/v4 all filter
+  `kind === "loop"` explicitly, so plain notes never appear as ghost
+  strokes, dice candidates, or fading lines even if a status ever
+  leaked.
+- **Classification became recognition, not conversation.** The
+  chat/clarify response shapes from the previous commit are gone; the
+  decompose prompt reverted to its two task shapes (steps/skip) and
+  only runs on consent. A new, separate `POST /notes/{id}/classify`
+  runs AFTER save (frontend fire-and-forget — the save itself never
+  waits) with a single yes/no prompt: task-like or plain writing, with
+  "when in doubt, plain — a wrong task nudge is worse than silence"
+  and underspecified fragments ("gym", "mom") explicitly binned as
+  plain. True's only effect is the whisper affordance; False and
+  failure (task_like NULL) are indistinguishable by design — silence
+  is correct behavior either way. The clarify path is deleted
+  entirely: an ambiguous note just stays plain, crackable manually.
+  Groq gotcha found live: JSON mode 400s unless the word "JSON"
+  appears in the prompt — the first classify prompt draft didn't say
+  it, and every classify silently no-opped.
+- **The whisper doesn't nag.** "looks like a loop — crack it?" in
+  faint handwritten accent ink; visible for 10 minutes
+  (demo-compressed, like v4's fade window), with a CSS fade whose
+  `animation-delay` is set inline to a negative value derived from
+  note age — so a re-render or page flip resumes the countdown
+  mid-fade instead of restarting it. After that the notebook has
+  offered once and stops.
+- **Manual crack respects consent over classification**: "crack this"
+  lives in a tiny ⋯ menu on every plain note, whatever the classifier
+  said. Cracking a name ("priya") gets decompose's honest answer — a
+  skip proposal ("no task to break down here") — which is correct: the
+  user asked, the machinery answered; it just never speaks first.
+- **Legacy**: `MessageKind.chat`/`clarify_prompt` remain in the enum so
+  old threads still load, but nothing creates them anymore. Migration
+  was two manual `ALTER TABLE`s (no migration tooling, per the
+  standing open item) plus a backfill — anything with children, moved
+  status, or a started thread became `kind='loop'` — and the demo DB
+  cleanup deleting the previous behavior's not-a-task "done chat
+  loops" ("hey"), per spec.
+
+Verified live: a journal entry and a name both save as plain ink and
+stay silent (classified false, nothing rendered); "cook biryani
+thursday" got the whisper, tapping it started the normal
+decompose/thread flow; "priya" was manually cracked from its menu
+(skip proposal); v2 and v4 render only cracked loops with the plain
+notes absent (v3 shares the identical kind filter). No console errors.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.llm_client import LLMError, complete_json
-from app.models import Message, MessageKind, MessageSender, Note, NoteStatus
+from app.models import Message, MessageKind, MessageSender, Note, NoteKind, NoteStatus
 from app.routes.notes import (
     MERGE_NUDGE_SYSTEM_PROMPT,
     TONE_HINTS,
@@ -61,11 +61,7 @@ def list_messages(note_id: UUID, db: Session = Depends(get_db)) -> List[MessageO
 
 def _act_on_proposal(db: Session, note: Note, proposal) -> List[Message]:
     """Turns a decompose proposal into state changes + thread messages.
-    Shared by thread/start and by send_message's clarify re-entry, so a
-    clarified "gym" gets exactly the same treatment as a note that was
-    unambiguous from the start. Does not commit — callers do. See
-    docs/DECISIONS.md ("Input classification").
-    """
+    Does not commit — callers do."""
     messages: List[Message] = []
 
     if proposal.type == "steps":
@@ -102,7 +98,7 @@ def _act_on_proposal(db: Session, note: Note, proposal) -> List[Message]:
                 )
                 db.add(merge_msg)
                 messages.append(merge_msg)
-    elif proposal.type == "skip":
+    else:  # skip
         skip_msg = Message(
             note_id=note.id,
             sender=MessageSender.companion,
@@ -111,34 +107,6 @@ def _act_on_proposal(db: Session, note: Note, proposal) -> List[Message]:
         )
         db.add(skip_msg)
         messages.append(skip_msg)
-    elif proposal.type == "chat":
-        # Not a task at all. The companion replies in-thread and the
-        # loop is immediately resolved to 'done' — kept, not deleted
-        # (deleting would cascade away this very exchange), but 'done'
-        # excludes it from every mechanic by existing invariants: v2
-        # ghost strokes / v3 dice pool / v4 fade lines all select
-        # 'active' loops only, stale detection short-circuits on done,
-        # and backlog pressure counts only not-done loops. Direct status
-        # assignment (not the complete path) on purpose: nothing was
-        # accomplished, so no promotion/cascade logic should run.
-        chat_msg = Message(
-            note_id=note.id,
-            sender=MessageSender.companion,
-            kind=MessageKind.chat,
-            text=proposal.reply,
-        )
-        db.add(chat_msg)
-        messages.append(chat_msg)
-        note.status = NoteStatus.done
-    else:  # clarify
-        clarify_msg = Message(
-            note_id=note.id,
-            sender=MessageSender.companion,
-            kind=MessageKind.clarify_prompt,
-            text=proposal.question,
-        )
-        db.add(clarify_msg)
-        messages.append(clarify_msg)
 
     return messages
 
@@ -150,10 +118,10 @@ def start_thread(note_id: UUID, db: Session = Depends(get_db)) -> List[MessageOu
     step. A 'steps' proposal is cracked open right away (same _crack_open
     every manual/AI path already used) and its first step becomes a
     'step' message; a 'skip' proposal becomes a 'skip_prompt' message
-    with no notes created yet. Input classified as not-a-task or
-    ambiguous becomes a 'chat' or 'clarify_prompt' message instead —
-    never an error. See docs/DECISIONS.md ("Chat thread", "Input
-    classification").
+    with no notes created yet. Only ever called on consent (whisper tap
+    or the note menu's "crack this") — this call is what turns a plain
+    note into a loop. See docs/DECISIONS.md ("Chat thread", "Notebook
+    first").
     """
     note = db.get(Note, str(note_id))
     if note is None:
@@ -162,6 +130,13 @@ def start_thread(note_id: UUID, db: Session = Depends(get_db)) -> List[MessageOu
     existing_message = db.query(Message.id).filter(Message.note_id == note.id).first()
     if existing_message is not None:
         raise HTTPException(status_code=400, detail="thread already started")
+
+    # Consent point. The steps path also sets this inside _crack_open,
+    # but the skip path never gets there — a skip-pending loop (thread
+    # started, no children yet) is already in the machinery and must
+    # not read as a plain note. Rolled back automatically if decompose
+    # fails, since nothing commits until below.
+    note.kind = NoteKind.loop
 
     proposal = _run_decompose(db, note)
     messages = _act_on_proposal(db, note, proposal)
@@ -240,34 +215,6 @@ def send_message(
     )
     db.add(user_msg)
     db.flush()
-
-    # Clarify re-entry (input classification): if the loop is still
-    # folded with no children and the companion's last open question was
-    # a clarify_prompt, this free text is the ANSWER to that question,
-    # not a summary request — route it back through the same decompose
-    # call with the original note text as context, and act on whatever
-    # comes back exactly as thread/start would have.
-    pending_clarify = (
-        db.query(Message)
-        .filter(
-            Message.note_id == note.id,
-            Message.kind == MessageKind.clarify_prompt,
-            Message.resolved.is_(False),
-        )
-        .order_by(Message.created_at.desc())
-        .first()
-    )
-    has_children = db.query(Note.id).filter(Note.parent_id == note.id).first() is not None
-    if pending_clarify is not None and note.status == NoteStatus.folded and not has_children:
-        pending_clarify.resolved = True
-        proposal = _run_decompose(db, note, clarification=payload.text)
-        new_messages = _act_on_proposal(db, note, proposal)
-
-        db.commit()
-        db.refresh(user_msg)
-        for m in new_messages:
-            db.refresh(m)
-        return [_message_to_out(user_msg)] + [_message_to_out(m) for m in new_messages]
 
     children = (
         db.query(Note)

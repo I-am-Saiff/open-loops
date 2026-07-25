@@ -30,6 +30,20 @@ export function createNote(input: {
   });
 }
 
+// Notebook first — recognition, not conversation. Called after a note
+// saves (never blocking the save); best-effort on the backend, so a
+// failure just means no whisper. See docs/DECISIONS.md.
+export function classifyNote(id: string): Promise<Note> {
+  return request<Note>(`/notes/${id}/classify`, { method: "POST" });
+}
+
+export function updateNoteText(id: string, text: string): Promise<Note> {
+  return request<Note>(`/notes/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ text }),
+  });
+}
+
 export function completeNote(id: string): Promise<CompleteResponse> {
   return request<CompleteResponse>(`/notes/${id}/complete`, {
     method: "PATCH",

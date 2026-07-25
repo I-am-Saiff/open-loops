@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import {
   advanceThread,
+  classifyNote,
   completeNote,
   createNote,
   dismissMessage,
@@ -14,6 +15,7 @@ import {
   peekNote,
   sendThreadMessage,
   startThread,
+  updateNoteText,
 } from "./api";
 import { ChatThread } from "./ChatThread";
 import { DicePage } from "./DicePage";
@@ -129,15 +131,52 @@ export default function App() {
     window.removeEventListener("pointerup", handleDragEnd);
   }, [handleDragMove]);
 
+  // Notebook first: writing saves a plain note and that's ALL that
+  // happens — no thread, no companion, no status. Classification runs
+  // quietly afterward (never blocking the save); its only possible
+  // outcome is the whisper affordance appearing on the card. Silence —
+  // including a failed classify — is correct behavior. See
+  // docs/DECISIONS.md ("Notebook first").
   async function handleCreateNote(text: string) {
     if (!draft) return;
     try {
       const note = await createNote({ text, x: draft.x, y: draft.y });
       setDraft(null);
       await refresh();
-      await handleOpenLoop(note);
+      classifyNote(note.id)
+        .then(() => refresh())
+        .catch(() => undefined);
     } catch (err) {
       setError((err as Error).message);
+    }
+  }
+
+  async function handleSaveText(noteId: string, text: string) {
+    try {
+      await updateNoteText(noteId, text);
+      await refresh();
+      // Edited ink gets re-read: the backend reset task_like on the
+      // text change, so re-classify quietly for the new text.
+      classifyNote(noteId)
+        .then(() => refresh())
+        .catch(() => undefined);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  // Consent: the whisper tap or the note menu's "crack this". The only
+  // path from plain ink into the loop machinery.
+  async function handleCrackNote(note: Note) {
+    setOpenThreadId(note.id);
+    try {
+      await peekNote(note.id);
+      const msgs = await startThread(note.id);
+      setThreads((prev) => ({ ...prev, [note.id]: msgs }));
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+      setOpenThreadId((cur) => (cur === note.id ? null : cur));
     }
   }
 
@@ -195,12 +234,6 @@ export default function App() {
     try {
       const newMsgs = await sendThreadMessage(noteId, text);
       appendMessages(noteId, newMsgs);
-      // A free-text reply can now change loop state, not just add
-      // messages: answering a clarify_prompt may crack the loop open
-      // (Done button needs the new active child) or resolve it to done
-      // (a chat-classified answer). See docs/DECISIONS.md ("Input
-      // classification").
-      await refresh();
     } catch (err) {
       setError((err as Error).message);
     }
@@ -299,7 +332,7 @@ export default function App() {
     <div className="app">
       <header className="app__header">
         <h1>Open Loops</h1>
-        {page === "v1" && <p className="app__hint">Double-click empty canvas to add a loop.</p>}
+        {page === "v1" && <p className="app__hint">Double-click anywhere to write a note.</p>}
       </header>
 
       <PageTabs current={page} onChange={setPage} />
@@ -339,6 +372,8 @@ export default function App() {
                 isDissolving={dissolvingId === note.id}
                 onDragStart={handleDragStart}
                 onOpen={handleOpenLoop}
+                onCrack={handleCrackNote}
+                onSaveText={handleSaveText}
               >
                 {isOpen && (
                   <ChatThread

@@ -32,12 +32,13 @@ export function DicePage({ notes, refresh, onError }: Props) {
   const [face, setFace] = useState(5);
   const timerRef = useRef<number | null>(null);
 
-  // The die only chooses among loops that already have a face-up step —
-  // folded loops would need a decompose (an LLM round-trip) mid-roll,
-  // and the point of this page is zero deciding, including "decide to
-  // crack this open."
+  // The die only chooses among cracked loops that already have a
+  // face-up step — plain notes are ink, not candidates ("Notebook
+  // first"), and folded loops would need a decompose (an LLM
+  // round-trip) mid-roll, when the point of this page is zero deciding,
+  // including "decide to crack this open."
   const candidates: Dare[] = notes
-    .filter((n) => n.parent_id === null && n.status === "active")
+    .filter((n) => n.parent_id === null && n.kind === "loop" && n.status === "active")
     .flatMap((loop) => {
       const step = notes.find((c) => c.parent_id === loop.id && c.status === "active");
       return step ? [{ loop, step }] : [];

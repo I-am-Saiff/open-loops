@@ -48,7 +48,10 @@ export function InkPage({ notes, refresh, onError }: Props) {
   // reveal, not one per pointermove.
   const peekedRef = useRef<Set<string>>(new Set());
 
-  const topLoops = notes.filter((n) => n.parent_id === null);
+  // Notebook first: only cracked loops exist on this page at all —
+  // plain notes are ink on the v1 canvas and never surface here. See
+  // docs/DECISIONS.md ("Notebook first").
+  const topLoops = notes.filter((n) => n.parent_id === null && n.kind === "loop");
   const openLoops = topLoops.filter((n) => n.status !== "done");
   const doneLoops = topLoops.filter((n) => n.status === "done");
 

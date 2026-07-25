@@ -14,6 +14,17 @@ class NoteStatus(str, enum.Enum):
     done = "done"
 
 
+# Identity: the app is a notebook first. Every note starts 'plain' —
+# ink on paper, no machinery. It becomes a 'loop' only on explicit
+# consent (tapping the crack affordance / the note menu's "crack
+# this"), and only loops participate in decompose, fog-of-war, stale
+# detection, merge detection, backlog pressure, and the v2/v3/v4
+# mechanic pages. See docs/DECISIONS.md ("Notebook first").
+class NoteKind(str, enum.Enum):
+    plain = "plain"
+    loop = "loop"
+
+
 class Note(Base):
     __tablename__ = "notes"
 
@@ -29,6 +40,13 @@ class Note(Base):
     status = sa.Column(
         sa.Enum(NoteStatus), nullable=False, default=NoteStatus.folded
     )
+    kind = sa.Column(sa.Enum(NoteKind), nullable=False, default=NoteKind.plain)
+    # Recognition, not conversation: set by POST /notes/{id}/classify
+    # after save. NULL = not classified (or classification failed —
+    # silence is correct behavior). True only surfaces a quiet crack
+    # affordance on the note; it changes nothing else. See
+    # docs/DECISIONS.md ("Notebook first").
+    task_like = sa.Column(sa.Boolean, nullable=True)
     # datetime.utcnow(), not a DB-side default: sibling ordering relies on
     # created_at being distinct per row, and objects are constructed one
     # at a time in Python (even within a single crack-open transaction),
@@ -85,14 +103,11 @@ class MessageKind(str, enum.Enum):
     # detection. related_note_id is the *other* loop's matching step.
     # See docs/DECISIONS.md ("Feature C, in-thread").
     merge_prompt = "merge_prompt"
-    # Companion's reply to input classified as not-a-task ("hey", a
-    # name, venting) — a warm redirect, never an error. The loop is
-    # immediately resolved to done alongside it. See docs/DECISIONS.md
-    # ("Input classification").
+    # LEGACY (notebook-first rework): no longer created anywhere. Kept
+    # so old threads containing them still load — e.g. a loop that went
+    # through the short-lived clarify flow. See docs/DECISIONS.md
+    # ("Notebook first").
     chat = "chat"
-    # Companion's one clarifying question for input classified as
-    # ambiguous ("gym", "mom") — resolved when the user's next free-text
-    # reply is routed back through decompose as the clarification.
     clarify_prompt = "clarify_prompt"
 
 

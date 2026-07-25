@@ -28,6 +28,12 @@ class NoteOut(BaseModel):
     # the v4 fade page, whose ink opacity is a function of time since
     # last interaction — see docs/DECISIONS.md ("v4 shrinking page").
     last_peeked_at: Optional[datetime]
+    # Notebook first: 'plain' (ink on paper, no machinery) or 'loop'
+    # (cracked on consent). See docs/DECISIONS.md ("Notebook first").
+    kind: str
+    # None = unclassified/classification failed; True surfaces only the
+    # quiet crack affordance.
+    task_like: Optional[bool]
 
 
 class CrackOpenRequest(BaseModel):
@@ -73,22 +79,14 @@ class DecomposeSkipProposal(BaseModel):
     suggestion: str
 
 
-# Input classification (see docs/DECISIONS.md "Input classification"):
-# the same single decompose LLM call can now also answer "this isn't a
-# task at all" (chat) or "this could be a task but I need one detail"
-# (clarify) instead of forcing steps out of "hey" or a person's name.
-class DecomposeChatProposal(BaseModel):
-    type: Literal["chat"] = "chat"
-    reply: str
-
-
-class DecomposeClarifyProposal(BaseModel):
-    type: Literal["clarify"] = "clarify"
-    question: str
-
-
 class LinkRequest(BaseModel):
     other_note_id: UUID
+
+
+# Notebook first: plain notes stay editable — Apple-Notes-style text
+# updates. See docs/DECISIONS.md ("Notebook first").
+class NoteUpdate(BaseModel):
+    text: str = Field(min_length=1)
 
 
 # Chat-thread redesign. One thread per top-level loop, see
