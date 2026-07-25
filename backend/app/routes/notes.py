@@ -14,6 +14,8 @@ from app.schemas import (
     CompleteResponse,
     CrackOpenRequest,
     CrackOpenResponse,
+    DecomposeChatProposal,
+    DecomposeClarifyProposal,
     DecomposeSkipProposal,
     DecomposeStepsProposal,
     LinkRequest,
@@ -236,25 +238,49 @@ def crack_open(
 
 
 DECOMPOSE_SYSTEM_PROMPT = """\
-You are a warm, casual companion helping someone break a task into a \
-plan — like a friend texting them through it one step at a time, not a \
+You are a warm, casual companion inside someone's to-do notebook — like \
+a friend texting them through their tasks one step at a time, not a \
 project manager handing over a checklist.
 
-Given the task text, respond with a JSON object in exactly one of these \
-two shapes:
+The user just wrote something on a new note. FIRST, silently classify \
+what they wrote:
 
-1. If the task benefits from being broken into steps, write 3 to 6 \
-concrete, sequential steps as short conversational messages — the way \
+- a TASK: a real, actionable thing to do (e.g. "cook biryani thursday", \
+"renew my passport")
+- NOT a task: a greeting, a person's name on its own, random text, \
+venting, or a question that isn't something for them to go do (e.g. \
+"hey", "priya", "what should i eat", "ugh today sucked")
+- AMBIGUOUS: could be a task but too underspecified to break down \
+(e.g. "gym", "mom", "the email")
+
+Then respond with a JSON object in exactly one of these four shapes:
+
+1. A task that benefits from being broken into steps — write 3 to 6 \
+concrete, sequential steps as short conversational messages, the way \
 you'd actually text a friend the next thing to do (e.g. "first, prep \
 your ingredients — chicken, onions, ginger, garlic, curry spices. lmk \
 when that's done" rather than "Prep ingredients"). Each one should read \
 like a message, not a bullet point:
 {"type": "steps", "steps": ["first step as a casual message", "second step as a casual message", ...]}
 
-2. If the task is trivial, easily avoidable, or better handled by \
-outsourcing/delegating than doing it yourself, write one casual message \
+2. A task that is trivial, easily avoidable, or better handled by \
+outsourcing/delegating than doing it yourself — one casual message \
 saying so and suggesting the alternative, the way a friend would:
 {"type": "skip", "suggestion": "a short, casual message with the alternative"}
+
+3. NOT a task — one short, warm, in-character reply: acknowledge what \
+they said the way a friend would, then gently invite them to drop a \
+task they've been putting off. Never scold, never explain that you're \
+a task app, never treat it as an error:
+{"type": "chat", "reply": "a short warm message"}
+
+4. AMBIGUOUS — ask exactly ONE short, conversational question to pin \
+down what they actually mean, nothing else:
+{"type": "clarify", "question": "one short question"}
+
+If the user's message includes a clarification they gave when asked, \
+read the original note and the clarification together — with that added \
+context, strongly prefer shape 1 or 2 over asking again.
 
 Respond with ONLY the JSON object and nothing else.
 """
@@ -348,19 +374,40 @@ def _find_merge_suggestion(
         return None
 
 
+DecomposeProposal = Union[
+    DecomposeStepsProposal,
+    DecomposeSkipProposal,
+    DecomposeChatProposal,
+    DecomposeClarifyProposal,
+]
+
+
 def _run_decompose(
-    db: Session, note: Note
-) -> Union[DecomposeStepsProposal, DecomposeSkipProposal]:
+    db: Session, note: Note, clarification: Optional[str] = None
+) -> DecomposeProposal:
     """The actual decompose logic — reusable by the standalone HTTP route
     below and by the chat-thread orchestration in routes/threads.py.
     Callers own the "already cracked open" guard, since it needs to run
     before any LLM call and threads.py has its own version of it (a
-    thread can exist without children yet, in the skip case). See
-    docs/DECISIONS.md ("Chat thread: schema and orchestration").
+    thread can exist without children yet, in the skip case).
+
+    Classification (task / not-a-task / ambiguous) happens inside the
+    same single LLM call — no extra round-trip. `clarification` is the
+    user's answer to an earlier clarify question; passing it re-enters
+    the same call with the original note text as context. See
+    docs/DECISIONS.md ("Input classification").
     """
+    if clarification is None:
+        user_prompt = note.text
+    else:
+        user_prompt = (
+            f'They originally wrote: "{note.text}"\n'
+            f'When asked to clarify, they said: "{clarification}"'
+        )
+
     tone_hint = TONE_HINTS[_backlog_pressure(db)]
     try:
-        raw_proposal = complete_json(DECOMPOSE_SYSTEM_PROMPT + tone_hint, note.text)
+        raw_proposal = complete_json(DECOMPOSE_SYSTEM_PROMPT + tone_hint, user_prompt)
     except LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
@@ -372,6 +419,10 @@ def _run_decompose(
             return proposal
         if proposal_type == "skip":
             return DecomposeSkipProposal(**raw_proposal)
+        if proposal_type == "chat":
+            return DecomposeChatProposal(**raw_proposal)
+        if proposal_type == "clarify":
+            return DecomposeClarifyProposal(**raw_proposal)
         raise ValueError(f"unknown proposal type: {proposal_type!r}")
     except (ValidationError, ValueError) as exc:
         raise HTTPException(
@@ -382,7 +433,7 @@ def _run_decompose(
 @router.post("/{note_id}/decompose")
 def decompose_note(
     note_id: UUID, db: Session = Depends(get_db)
-) -> Union[DecomposeStepsProposal, DecomposeSkipProposal]:
+) -> DecomposeProposal:
     """Preview only — proposes a step breakdown (or a skip suggestion) for
     a note without creating anything. Kept as its own clean, side-effect-
     free endpoint; the chat-thread flow (routes/threads.py) calls

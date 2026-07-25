@@ -29,7 +29,10 @@ export type MessageKind =
   | "summary"
   | "done"
   | "stale_prompt"
-  | "merge_prompt";
+  | "merge_prompt"
+  // Input classification — see docs/DECISIONS.md:
+  | "chat" // companion's reply to not-a-task input; the loop resolves to done
+  | "clarify_prompt"; // companion's one question for ambiguous input
 
 export interface Message {
   id: string;

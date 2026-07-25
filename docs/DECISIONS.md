@@ -1229,6 +1229,69 @@ timestamps in SQLite to force the whisper (test-data shortcut for the
 played the reclaim fade and deleted the loop, landing on the blank-page
 empty state. Clean console on a fresh load.
 
+## 2026-07-25 — Input classification: the companion never errors, and non-tasks resolve to done
+
+Typing "hey" or a person's name as a new loop used to get decomposed
+into nonsense steps. The decompose LLM call now classifies first —
+same single call, no new endpoint, no extra round-trip: the
+classification instructions and two new response shapes ("chat" for
+not-a-task, "clarify" for ambiguous) were added to
+`DECOMPOSE_SYSTEM_PROMPT` alongside the existing steps/skip shapes.
+
+- **Never a validation error.** Whatever the input, the companion
+  responds conversationally: greetings/names/venting/questions get a
+  warm in-character redirect ("chat" → a `chat` message, e.g. "hey!
+  got anything on your mind you've been putting off?"); underspecified
+  maybe-tasks ("gym", "mom") get exactly one conversational question
+  ("clarify" → a `clarify_prompt` message). Two new `MessageKind`
+  values; SQLite stores the enum as VARCHAR with no CHECK constraint,
+  so no migration needed.
+- **How non-task entries are stored: kept, and immediately resolved to
+  `done`.** Deleting the note would cascade-delete the very exchange
+  the user just had (messages FK to the loop), and the frontend holds
+  the thread open at that moment. Marking it done instead exits it from
+  every mechanic *by existing invariants, with zero new filtering
+  anywhere*: v2 ghost strokes, v3 dice candidates, and v4 fade lines
+  all select `active` loops only; stale detection short-circuits on
+  done; backlog pressure counts only not-done loops. The status is
+  assigned directly rather than via the complete path — nothing was
+  accomplished, so no promotion/cascade/celebration logic should run.
+  Accepted side effects, on purpose: the loop shows as a struck-through
+  done card on v1 (the conversation stays revisitable via "view
+  thread") and appears in v2's done ledger. Distinguishing "completed"
+  from "was never a task" client-side would need per-loop message
+  fetches; not worth it.
+- **Clarify re-entry rides the existing free-text endpoint.** No new
+  route: `POST /notes/{id}/messages` now checks — loop still folded, no
+  children, an unresolved `clarify_prompt` exists — and if so treats
+  the text as the answer: resolves the prompt and re-runs decompose
+  with `'They originally wrote: "…" / When asked to clarify, they
+  said: "…"'` as the user prompt (the prompt tells the model to
+  strongly prefer steps/skip once a clarification is present). The
+  result goes through `_act_on_proposal`, a helper extracted from
+  thread/start, so a clarified "gym" gets exactly the same treatment
+  (including Feature C merge detection) as a note that was unambiguous
+  from the start — and a clarify answer that's still not a task
+  resolves to chat+done like any other non-task. Once the loop has
+  children the same endpoint falls through to the summary path
+  unchanged.
+- **Frontend: two rendering-only changes.** `handleSendMessage` now
+  refreshes notes after sending (a clarify answer can crack the loop
+  open — the Done button needs the new active child — or resolve it to
+  done), and the thread input's placeholder switches to "reply…" while
+  a clarify question is pending. `chat`/`clarify_prompt` bubbles render
+  through the existing generic message rendering; no new action UI.
+
+Verified live, all five spec inputs routed correctly: "hey" → chat +
+loop done; "priya" → chat + done; "gym" → clarify (loop stayed
+folded), then the reply "get back into a routine, 3 mornings a week"
+re-entered decompose and cracked it open with a first step; "cook
+biryani thursday" → steps; "what should i eat" → chat + done. Also
+verified in the UI (v1 create-"hey" and full clarify conversation),
+the summary path regression (a loop with children still gets a
+summary), and that the "hey" loop appears in no v2 ghost stroke, v3
+dice pool, or v4 fade line. No console errors.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user

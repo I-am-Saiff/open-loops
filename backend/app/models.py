@@ -85,6 +85,15 @@ class MessageKind(str, enum.Enum):
     # detection. related_note_id is the *other* loop's matching step.
     # See docs/DECISIONS.md ("Feature C, in-thread").
     merge_prompt = "merge_prompt"
+    # Companion's reply to input classified as not-a-task ("hey", a
+    # name, venting) — a warm redirect, never an error. The loop is
+    # immediately resolved to done alongside it. See docs/DECISIONS.md
+    # ("Input classification").
+    chat = "chat"
+    # Companion's one clarifying question for input classified as
+    # ambiguous ("gym", "mom") — resolved when the user's next free-text
+    # reply is routed back through decompose as the clarification.
+    clarify_prompt = "clarify_prompt"
 
 
 class Message(Base):

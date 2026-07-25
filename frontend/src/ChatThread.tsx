@@ -72,6 +72,12 @@ export function ChatThread({
     loop.status === "folded" && messages.some((m) => m.kind === "skip_prompt");
   const showSkipActions = !readOnly && isUnresolvedSkip && !decliningSkip;
 
+  // A pending clarify question repurposes the free-text input as the
+  // answer box (the backend routes the reply back through decompose) —
+  // the placeholder should invite an answer, not a summary request.
+  const pendingClarify =
+    loop.status === "folded" && messages.some((m) => m.kind === "clarify_prompt" && !m.resolved);
+
   function submitText() {
     const trimmed = inputText.trim();
     if (!trimmed) return;
@@ -176,7 +182,7 @@ export function ChatThread({
         <div className="chat-thread__input">
           <input
             value={inputText}
-            placeholder="ask “what’s the full plan?”…"
+            placeholder={pendingClarify ? "reply…" : "ask “what’s the full plan?”…"}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submitText()}
           />

@@ -195,6 +195,12 @@ export default function App() {
     try {
       const newMsgs = await sendThreadMessage(noteId, text);
       appendMessages(noteId, newMsgs);
+      // A free-text reply can now change loop state, not just add
+      // messages: answering a clarify_prompt may crack the loop open
+      // (Done button needs the new active child) or resolve it to done
+      // (a chat-classified answer). See docs/DECISIONS.md ("Input
+      // classification").
+      await refresh();
     } catch (err) {
       setError((err as Error).message);
     }
