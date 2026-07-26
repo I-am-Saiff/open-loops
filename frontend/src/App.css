@@ -346,10 +346,13 @@
 }
 
 /* Inline edit (double-click a plain note): same handwriting, same
-   size, in place — editing ink, not filling a form field. */
+   size, in place — editing ink, not filling a form field. Multi-line
+   like NewNoteInput: wraps at the card's width, auto-grows (height
+   from JS in NoteCard.tsx), no inner scrollbar. */
 .note-card__edit {
+  display: block;
   width: 100%;
-  min-width: 140px;
+  min-width: 180px;
   border: none;
   border-bottom: 1px dashed var(--border);
   background: transparent;
@@ -358,6 +361,8 @@
   font-size: 18px;
   line-height: 1.3;
   color: var(--ink);
+  resize: none;
+  overflow: hidden;
 }
 
 /* ---------- actions ---------- */
@@ -385,16 +390,24 @@
   padding: 0;
 }
 
+/* Writing is multi-line: a textarea that wraps at a note card's width
+   and auto-grows downward (height driven from JS in NewNoteInput.tsx).
+   Ink metrics match .note-card__text exactly, so the saved note reads
+   the same as what was typed. */
 .new-note-input {
   position: absolute;
+  display: block;
   font-family: var(--font-hand);
-  font-size: 17px;
+  font-size: 18px;
+  line-height: 1.3;
   padding: 10px 12px;
   border: 1.5px dashed var(--accent);
   border-radius: var(--radius-card);
   background: var(--card-front);
   color: var(--ink);
-  min-width: 160px;
+  width: 240px;
+  resize: none;
+  overflow: hidden;
   box-shadow: var(--shadow-soft);
 }
 

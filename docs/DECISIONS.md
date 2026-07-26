@@ -1491,6 +1491,52 @@ card moves the card without panning; erase + whisper + expiry work
 mid-scroll; v2/v3/v4 unchanged. No console errors (one stale vite
 HMR complaint from mid-edit, gone on reload).
 
+## 2026-07-26 — Multi-line note writing: textarea that grows like Apple Notes
+
+The note-writing box was a single-line `<input>` — long text scrolled
+horizontally out of view (Excel formula-bar behavior) and you couldn't
+see earlier words until commit. Replaced with an auto-growing
+`<textarea>` in both places you write ink: the new-note draft
+(`NewNoteInput`) and the in-place edit (double-click a plain note, in
+`NoteCard`). Decisions:
+
+- **Auto-grow via measure-on-change, not a fixed height.** On every
+  keystroke: set `height:auto` then `height = scrollHeight` (a
+  `useEffect` on the text value). Collapsing first means the box also
+  *shrinks* when lines are deleted, not just grows. `overflow:hidden`
+  guarantees no inner scrollbar ever appears, and `resize:none` kills
+  the drag handle — the box's height is content, not chrome.
+- **Fixed wrap width, not `min-width`.** The draft textarea is a flat
+  `width:240px` (about a note card's width); text wraps there and the
+  box grows taller. The edit textarea is `width:100%` of the card it
+  sits in. Ink metrics (`font: var(--font-hand) 18px / 1.3`) match
+  `.note-card__text` exactly, so what you type is what the saved note
+  renders — including wrap points.
+- **Enter is a newline; commit is blur or Cmd/Ctrl+Enter.** A real
+  notebook wraps and breaks lines on Enter, so Enter must *not*
+  submit. Commit-on-blur was already the primary save path (clicking
+  away) and is preserved untouched; Cmd/Ctrl+Enter is the explicit
+  keyboard commit. Escape still cancels. Same key handling in both
+  the draft and the edit textarea, so writing and editing are
+  identical.
+- **Line breaks round-trip.** `.note-card__text` already had
+  `white-space: pre-wrap`, so stored `\n`s render as real breaks with
+  no change needed. Verified in the DB: a four-line list stored as
+  `'groceries:\n- eggs\n- olive oil\n- bread'` and rendered line-for-
+  line; a long paragraph stored as one string and wrapped visually.
+- **`textarea` added to the focus-reset.** `index.css` zeroed the
+  default focus outline for `button/input/[tabindex]` but not
+  `textarea`, so the new box flashed the browser's blue ring. Added
+  `textarea` to both the `outline:none` and `:focus-visible` accent-
+  ring rules — consistent with the rest of the paper UI.
+
+Verified live: a long paragraph wrapped and grew downward with
+everything visible (no horizontal scroll, no inner scrollbar);
+intentional Enter line breaks committed via Cmd+Enter and via blur and
+survived a reload; double-click edit behaved identically and added a
+line; the classification whisper fired on both multi-line notes. No
+console errors.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import type { Note } from "./types";
 
@@ -64,6 +64,26 @@ export function NoteCard({
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [editText, setEditText] = useState<string | null>(null);
+  const editRef = useRef<HTMLTextAreaElement>(null);
+
+  // Same auto-grow as NewNoteInput: editing ink behaves exactly like
+  // writing it — wraps at the card's width, grows downward, no inner
+  // scrollbar. Also drops the caret at the end on open (autoFocus
+  // alone leaves it at the start of a textarea).
+  useEffect(() => {
+    const el = editRef.current;
+    if (el === null || editText === null) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [editText]);
+
+  useEffect(() => {
+    const el = editRef.current;
+    if (el === null || editText === null) return;
+    el.setSelectionRange(el.value.length, el.value.length);
+    // Caret placement is open-time only — must not re-run per keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editText !== null]);
 
   const tilt = tiltForId(note.id, isOpen ? 0.4 : 2.2);
   const isPlain = note.kind === "plain";
@@ -106,15 +126,17 @@ export function NoteCard({
       onPointerDown={(e) => onDragStart(note.id, e)}
     >
       {isPlain && editText !== null ? (
-        <input
+        <textarea
           autoFocus
+          ref={editRef}
           className="note-card__edit"
           value={editText}
+          rows={1}
           onChange={(e) => setEditText(e.target.value)}
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
-            if (e.key === "Enter") commitEdit();
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) commitEdit();
             else if (e.key === "Escape") setEditText(null);
           }}
           onBlur={commitEdit}
