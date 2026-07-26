@@ -30,7 +30,7 @@
 
 .app__header h1 {
   margin: 0;
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 32px;
   font-weight: 400;
   color: var(--accent);
@@ -45,16 +45,18 @@
   color: var(--ink-dim);
 }
 
+/* Errors in the notebook's own quiet voice — an italic margin note
+   under the header, not an alert bar. Click to wave it away. */
 .app__error {
   position: relative;
   z-index: 1;
   flex: 0 0 auto;
-  padding: 8px 28px;
-  background: #f3d9ce;
-  color: #6b2a15;
+  padding: 6px 28px;
+  color: var(--accent);
   font-size: 13px;
+  font-style: italic;
   cursor: pointer;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px dashed var(--paper-line);
 }
 
 /* Plain blank paper — no ruled lines, no margin rule. The subtle grain
@@ -95,7 +97,7 @@
   border-radius: 9px 0 0 7px;
   background: var(--fold);
   color: var(--ink-dim);
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 14px;
   text-align: left;
   box-shadow: var(--shadow-soft);
@@ -125,11 +127,35 @@
 }
 
 .page-placeholder p {
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 18px;
   color: var(--ink-dim);
   opacity: 0.6;
   transform: rotate(-1.5deg);
+}
+
+/* A truly blank page gets one line of the notebook's handwriting,
+   centered — an invitation, not an onboarding screen. Gone the moment
+   there's any ink on the page. */
+.canvas__empty {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-1.5deg);
+  margin: 0;
+  font-family: var(--font-hand);
+  font-size: 18px;
+  color: var(--ink-dim);
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  animation: empty-in 1.4s ease 0.3s forwards;
+}
+
+@keyframes empty-in {
+  to {
+    opacity: 0.6;
+  }
 }
 
 /* ---------- note cards ---------- */
@@ -141,7 +167,7 @@
   padding: 12px 14px;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 2px 10px 4px 9px;
+  border-radius: var(--radius-card);
   box-shadow: var(--shadow-soft);
   transform: rotate(var(--tilt, 0deg));
   cursor: grab;
@@ -159,7 +185,7 @@
 }
 
 .note-card__text {
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 18px;
   line-height: 1.3;
   white-space: pre-wrap;
@@ -238,7 +264,7 @@
   padding: 0;
   border: none;
   background: transparent;
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 13px;
   font-style: italic;
   color: var(--accent);
@@ -282,7 +308,7 @@
   z-index: 2;
   background: var(--card-front);
   border: 1px solid var(--border);
-  border-radius: 2px 7px 3px 7px;
+  border-radius: var(--radius-card);
   box-shadow: var(--shadow-lifted);
   padding: 4px 0;
   min-width: 110px;
@@ -295,7 +321,7 @@
   border: none;
   background: transparent;
   padding: 5px 12px;
-  font-family: Georgia, serif;
+  font-family: var(--font-ui);
   font-size: 12px;
   color: var(--ink);
 }
@@ -314,7 +340,7 @@
   border-bottom: 1px dashed var(--border);
   background: transparent;
   padding: 0 0 2px;
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 18px;
   line-height: 1.3;
   color: var(--ink);
@@ -325,7 +351,7 @@
 .note-card__action {
   margin-top: 8px;
   display: block;
-  font-family: Georgia, serif;
+  font-family: var(--font-ui);
   font-size: 12px;
   border: none;
   background: transparent;
@@ -339,7 +365,7 @@
   background: transparent;
   border: none;
   color: var(--ink-dim);
-  font-family: Georgia, serif;
+  font-family: var(--font-ui);
   font-size: 12px;
   text-decoration: underline;
   padding: 0;
@@ -347,11 +373,11 @@
 
 .new-note-input {
   position: absolute;
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 17px;
   padding: 10px 12px;
   border: 1.5px dashed var(--accent);
-  border-radius: 2px 8px 2px 8px;
+  border-radius: var(--radius-card);
   background: var(--card-front);
   color: var(--ink);
   min-width: 160px;
@@ -389,7 +415,7 @@
 }
 
 .chat-thread__title {
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 17px;
   color: var(--ink);
 }
@@ -418,7 +444,7 @@
   max-width: 85%;
   padding: 8px 12px;
   border-radius: 10px;
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 16px;
   line-height: 1.35;
 }
@@ -436,7 +462,7 @@
   background: var(--accent);
   border-bottom-right-radius: 2px;
   color: var(--accent-ink);
-  font-family: Georgia, serif;
+  font-family: var(--font-ui);
   font-size: 14px;
 }
 
@@ -446,9 +472,9 @@
   border: none;
   background: var(--accent);
   color: var(--accent-ink);
-  border-radius: 3px 8px 3px 8px;
+  border-radius: var(--radius-btn);
   padding: 7px 16px;
-  font-family: Georgia, serif;
+  font-family: var(--font-ui);
   font-size: 13px;
   font-weight: bold;
   letter-spacing: 0.4px;
@@ -467,9 +493,9 @@
   border: none;
   background: var(--accent);
   color: var(--accent-ink);
-  border-radius: 3px 8px 3px 8px;
+  border-radius: var(--radius-btn);
   padding: 6px 12px;
-  font-family: Georgia, serif;
+  font-family: var(--font-ui);
   font-size: 12px;
   font-weight: bold;
   box-shadow: var(--shadow-soft);
@@ -492,11 +518,11 @@
 .chat-thread__input input {
   flex: 1 1 auto;
   min-width: 0;
-  font-family: Georgia, serif;
+  font-family: var(--font-ui);
   font-size: 13px;
   padding: 6px 10px;
   border: 1px solid var(--border);
-  border-radius: 2px 6px 2px 6px;
+  border-radius: var(--radius-input);
   background: var(--card);
   color: var(--ink);
 }
@@ -507,9 +533,9 @@
   border: none;
   background: var(--accent);
   color: var(--accent-ink);
-  border-radius: 3px 8px 3px 8px;
+  border-radius: var(--radius-btn);
   padding: 6px 12px;
-  font-family: Georgia, serif;
+  font-family: var(--font-ui);
   font-size: 12px;
   font-weight: bold;
 }
@@ -538,7 +564,7 @@
 }
 
 .ink-page__empty {
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 17px;
   color: var(--ink-dim);
 }
@@ -548,7 +574,7 @@
 }
 
 .ink-entry__title {
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 20px;
   color: var(--ink);
   margin-bottom: 6px;
@@ -558,7 +584,7 @@
   border: none;
   background: transparent;
   padding: 0;
-  font-family: Georgia, serif;
+  font-family: var(--font-ui);
   font-size: 13px;
   font-style: italic;
   color: var(--ink-dim);
@@ -581,7 +607,7 @@
    ink here" before a single word is legible. touch-action: none so
    rubbing works with a finger too, instead of scrolling the page. */
 .ink-ghost {
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 19px;
   line-height: 1.4;
   color: var(--ink);
@@ -608,7 +634,7 @@
   border: none;
   background: transparent;
   padding: 0;
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 16px;
   color: var(--accent);
   white-space: nowrap;
@@ -631,7 +657,7 @@
 }
 
 .ink-page__done-line {
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 15px;
   color: var(--ink-dim);
   text-decoration: line-through;
@@ -770,7 +796,7 @@
 
 /* "no take-backs" — a margin scribble, not a system message. */
 .dice-page__whisper--rules {
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   transform: rotate(-2deg);
   color: var(--accent);
 }
@@ -785,7 +811,7 @@
    back) so it lands like something thrown, not something faded in. */
 .dare__step {
   margin: 0;
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 30px;
   font-weight: bold;
   line-height: 1.3;
@@ -824,9 +850,9 @@
   border: none;
   background: var(--accent);
   color: var(--accent-ink);
-  border-radius: 3px 8px 3px 8px;
+  border-radius: var(--radius-btn);
   padding: 8px 22px;
-  font-family: Georgia, serif;
+  font-family: var(--font-ui);
   font-size: 14px;
   font-weight: bold;
   letter-spacing: 0.4px;
@@ -837,7 +863,7 @@
   border: none;
   background: transparent;
   padding: 0;
-  font-family: Georgia, serif;
+  font-family: var(--font-ui);
   font-size: 13px;
   font-style: italic;
   color: var(--ink-dim);
@@ -884,7 +910,7 @@
 }
 
 .fade-page__empty {
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 17px;
   color: var(--ink-dim);
 }
@@ -904,7 +930,7 @@
    that no longer fade. The record of what you did is the one thing the
    page never forgets. */
 .fade-entry__done-stroke {
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 17px;
   font-weight: bold;
   color: var(--ink);
@@ -925,7 +951,7 @@
 }
 
 .fade-entry__step {
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 20px;
   line-height: 1.35;
   color: var(--ink);
@@ -937,7 +963,7 @@
   border: none;
   background: transparent;
   padding: 0 4px;
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 17px;
   color: var(--ink);
   opacity: 0.55;
@@ -1099,7 +1125,7 @@
    are gone for good. */
 .erase-whisper {
   position: absolute;
-  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-family: var(--font-hand);
   font-size: 14px;
   font-style: italic;
   color: var(--ink-dim);

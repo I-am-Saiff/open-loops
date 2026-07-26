@@ -1404,6 +1404,43 @@ via "undo?" and the card returned intact; Esc puts the eraser down;
 drag, thread open, classification whisper, and plain-note silence all
 unchanged. No console errors.
 
+## 2026-07-26 — Visual polish pass: discipline the system, don't decorate it
+
+A pass, not a redesign — the paper look was already right, so the work
+was consolidating it into a system and deleting what fell outside it:
+
+- **Two voices, two font variables.** Every `font-family` in the app
+  now resolves to `--font-hand` (the handwriting — notes, whispers,
+  titles, anything the notebook says) or `--font-ui` (quiet serif —
+  buttons, inputs, hints). Same families as before, zero new fonts;
+  the change is that a stray stack can no longer drift out of sync.
+- **Hand-drawn radii from one shared set.** Cards/menus/inputs each
+  had their own slightly-different uneven corner radii. Now
+  `--radius-card` / `--radius-btn` / `--radius-input` — still uneven
+  (nothing machine-rounded), but consistently so. The die, chat
+  bubbles, and ghost-ink smudge keep their intentional one-off shapes.
+- **One off-palette color fixed.** `--paper-line` was a cool
+  blue-grey (`#b9c9d9`) left over from the ruled-lines era, used for
+  the header's perforation rule — the only cold color on a warm page.
+  Now a warm `#d3c7a4`. Dead `--stale-paper`/`--stale-border` vars
+  (the old sticky-note stale UI, long since replaced by in-thread
+  prompts) removed.
+- **The error bar stopped being an alert bar.** Was a filled salmon
+  strip with a solid border — the one web-app-chrome element left.
+  Now an italic accent-ink margin note under the header, dashed rule,
+  click to wave away. Same behavior, quieter voice.
+- **Empty state.** A truly blank v1 page now says "a blank page —
+  double-click and write" in faint centered handwriting, fading in
+  gently; it disappears the moment there is any ink. No change when
+  notes exist, so the demo canvas is untouched.
+- Grain, shadows, focus ring, whisper fades, done strokes were
+  already intentional and consistent — left alone. When in doubt,
+  removed rather than added.
+
+Verified live across all four pages: v1 canvas/threads, v2 ghost ink,
+v3 die, v4 fade all render unchanged apart from the intended tweaks;
+no console errors.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user

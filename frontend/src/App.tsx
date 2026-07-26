@@ -454,6 +454,9 @@ export default function App() {
         ref={canvasRef}
         onDoubleClick={handleCanvasDoubleClick}
       >
+        {notes.filter((n) => n.parent_id === null && !pendingErase[n.id]).length === 0 &&
+          !draft && <p className="canvas__empty">a blank page — double-click and write</p>}
+
         {notes
           .filter((note) => note.parent_id === null && !pendingErase[note.id])
           .map((note) => {
