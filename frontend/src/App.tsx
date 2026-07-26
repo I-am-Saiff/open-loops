@@ -42,6 +42,22 @@ interface Draft extends Point {
 // docs/DECISIONS.md ("Feature B, in-thread").
 const DISSOLVE_ANIMATION_MS = 450;
 
+// Eraser timings. The rub-out matches App.css's @keyframes rub-out;
+// the undo window is how long the "rubbed out — undo?" whisper lingers
+// before the DELETE actually fires — until then nothing has left the
+// backend, so undo is just un-hiding the card. See docs/DECISIONS.md
+// ("Eraser").
+const RUB_OUT_ANIMATION_MS = 650;
+const ERASE_UNDO_WINDOW_MS = 5000;
+
+// A note mid-undo-window: hidden from the canvas, whisper showing at
+// its old spot, real DELETE armed on a timer.
+interface PendingErase {
+  x: number;
+  y: number;
+  timer: number;
+}
+
 export default function App() {
   // Which notebook page is showing — four renderings of the same loops
   // data, one per anti-avoidance mechanic. See docs/DECISIONS.md
@@ -62,6 +78,13 @@ export default function App() {
   // handleDropStale. Only one can dissolve at a time in practice (you
   // can only have one thread open), but keyed by id for clarity.
   const [dissolvingId, setDissolvingId] = useState<string | null>(null);
+  // Eraser mode: picked up from the corner of the page, put down with
+  // Esc or a second click. See docs/DECISIONS.md ("Eraser").
+  const [eraserMode, setEraserMode] = useState(false);
+  // Notes currently playing the rub-out animation, keyed by id.
+  const [rubbing, setRubbing] = useState<Record<string, boolean>>({});
+  // Notes in the undo window: hidden, whisper up, DELETE on a timer.
+  const [pendingErase, setPendingErase] = useState<Record<string, PendingErase>>({});
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
@@ -99,12 +122,82 @@ export default function App() {
   }
 
   function handleCanvasDoubleClick(e: React.MouseEvent) {
+    if (eraserMode) return; // you write with a pen, not an eraser
     if (e.target !== canvasRef.current) return; // ignore double-clicks on a card
     setDraft({ kind: "new-note", ...toCanvasCoords(e.clientX, e.clientY) });
   }
 
+  // Picking up / putting down the eraser. Picking it up closes any open
+  // thread — you can't rub out a page you're mid-conversation with.
+  function toggleEraser() {
+    setEraserMode((on) => {
+      if (!on) setOpenThreadId(null);
+      return !on;
+    });
+  }
+
+  // Esc puts the eraser back.
+  useEffect(() => {
+    if (!eraserMode) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setEraserMode(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [eraserMode]);
+
+  // The rub: plays the ink-smear animation, then hides the card and
+  // opens the undo window. The actual DELETE (existing dissolve
+  // endpoint — cascades children + thread messages) fires only when the
+  // whisper expires, so undo is purely local. See docs/DECISIONS.md.
+  function handleErase(note: Note) {
+    if (rubbing[note.id] || pendingErase[note.id]) return;
+    setRubbing((prev) => ({ ...prev, [note.id]: true }));
+
+    window.setTimeout(() => {
+      setRubbing((prev) => {
+        const next = { ...prev };
+        delete next[note.id];
+        return next;
+      });
+      const pos = positions[note.id] ?? { x: note.x, y: note.y };
+      const timer = window.setTimeout(async () => {
+        setPendingErase((prev) => {
+          const next = { ...prev };
+          delete next[note.id];
+          return next;
+        });
+        try {
+          await dissolveNote(note.id);
+          await refresh();
+        } catch (err) {
+          setError((err as Error).message);
+          await refresh();
+        }
+      }, ERASE_UNDO_WINDOW_MS);
+      setPendingErase((prev) => ({ ...prev, [note.id]: { x: pos.x, y: pos.y, timer } }));
+    }, RUB_OUT_ANIMATION_MS);
+  }
+
+  // "undo?" — cancel the armed DELETE and un-hide the card. Nothing was
+  // ever sent to the backend, so this is a pure local revert.
+  function handleUndoErase(noteId: string) {
+    setPendingErase((prev) => {
+      const entry = prev[noteId];
+      if (entry) window.clearTimeout(entry.timer);
+      const next = { ...prev };
+      delete next[noteId];
+      return next;
+    });
+  }
+
   function handleDragStart(id: string, e: ReactPointerEvent) {
     e.stopPropagation();
+    if (eraserMode) {
+      const note = notes.find((n) => n.id === id);
+      if (note) handleErase(note);
+      return;
+    }
     const start = toCanvasCoords(e.clientX, e.clientY);
     const pos = positions[id] ?? { x: 0, y: 0 };
     draggingRef.current = { id, offsetX: start.x - pos.x, offsetY: start.y - pos.y };
@@ -356,9 +449,13 @@ export default function App() {
       )}
 
       {page === "v1" && (
-      <div className="canvas" ref={canvasRef} onDoubleClick={handleCanvasDoubleClick}>
+      <div
+        className={`canvas${eraserMode ? " canvas--erasing" : ""}`}
+        ref={canvasRef}
+        onDoubleClick={handleCanvasDoubleClick}
+      >
         {notes
-          .filter((note) => note.parent_id === null)
+          .filter((note) => note.parent_id === null && !pendingErase[note.id])
           .map((note) => {
             const pos = positions[note.id] ?? { x: note.x, y: note.y };
             const isOpen = openThreadId === note.id;
@@ -370,6 +467,7 @@ export default function App() {
                 y={pos.y}
                 isOpen={isOpen}
                 isDissolving={dissolvingId === note.id}
+                isRubbing={rubbing[note.id] === true}
                 onDragStart={handleDragStart}
                 onOpen={handleOpenLoop}
                 onCrack={handleCrackNote}
@@ -406,7 +504,33 @@ export default function App() {
             onCancel={() => setDraft(null)}
           />
         )}
+
+        {/* The undo whisper: sits where the erased note was, in the
+            notebook's own handwriting — no dialog, just a fading
+            second chance. */}
+        {Object.entries(pendingErase).map(([id, entry]) => (
+          <div key={id} className="erase-whisper" style={{ left: entry.x, top: entry.y }}>
+            rubbed out —{" "}
+            <button type="button" onClick={() => handleUndoErase(id)}>
+              undo?
+            </button>
+          </div>
+        ))}
       </div>
+      )}
+
+      {/* The eraser: a physical object resting in the corner of the
+          page, not a toolbar button. Click to pick it up, Esc or a
+          second click to put it back. */}
+      {page === "v1" && (
+        <button
+          type="button"
+          className={`eraser-tool${eraserMode ? " eraser-tool--held" : ""}`}
+          aria-label={eraserMode ? "put the eraser down" : "pick up the eraser"}
+          aria-pressed={eraserMode}
+          title={eraserMode ? "put it back (Esc)" : "eraser"}
+          onClick={toggleEraser}
+        />
       )}
     </div>
   );

@@ -1359,6 +1359,51 @@ decompose/thread flow; "priya" was manually cracked from its menu
 (skip proposal); v2 and v4 render only cracked loops with the plain
 notes absent (v3 shares the identical kind filter). No console errors.
 
+## 2026-07-26 — Eraser: undo is a deferred DELETE, not a restore endpoint
+
+A notebook needs an eraser. Design decisions:
+
+- **The tool is an object, not a button.** A two-tone eraser block
+  (clay sleeve + gum body, drawn in the notebook's own palette) rests
+  in the bottom-left corner of the v1 page. Clicking picks it up
+  (lifts off the page, straightens slightly); Esc or a second click
+  puts it back. While held, the page cursor becomes an eraser tip
+  (inline SVG data-URI cursor) and note innards lose pointer-events —
+  a rub anywhere on a card lands on the card itself, so you can't
+  accidentally tap "continue" mid-erase. Picking the eraser up also
+  closes any open thread (you can't rub out a page you're
+  mid-conversation with), and double-click-to-write is disabled — you
+  write with a pen, not an eraser.
+- **Rub-out is ink smearing, not the crumple.** `@keyframes rub-out`:
+  side-to-side translate jitter + growing blur + slight skew/stretch,
+  fading to nothing over 650ms — the ink smears under the eraser and
+  lifts off the paper. Deliberately distinct from the "let it go"
+  dissolve crumple (that's destroying a page; this is erasing ink).
+- **The accidental-loss guard defers the DELETE instead of adding a
+  restore endpoint.** After the rub-out the card is only *hidden*
+  locally; a "rubbed out — undo?" whisper (handwriting, at the note's
+  old spot) lingers for 5 seconds with the real DELETE armed on a
+  timer. "undo?" cancels the timer and un-hides the card — nothing
+  ever left the backend, so undo is a pure local revert, and the
+  backend needs no soft-delete/restore machinery. Same
+  animation-then-commit pattern Feature B's dissolve already used.
+  Failure mode is the safe direction: closing the tab mid-window means
+  the note *survives* (the DELETE never fired), not that it's lost.
+- **Cascade: the existing DELETE endpoint already covers it.** Erase
+  calls the same `DELETE /notes/{id}` as "let it go"; SQLite
+  `ON DELETE CASCADE` FKs (with the `PRAGMA foreign_keys=ON`
+  listener) remove children recursively, and thread messages all key
+  on the top-level loop's id so they cascade with it. Verified
+  directly: created a loop + child + message, DELETE'd the parent,
+  child and message rows both gone. No backend changes beyond a
+  docstring.
+
+Verified live: rubbed out a plain note (smear animation, whisper,
+then gone from the DB after the window); a second erase was rescued
+via "undo?" and the card returned intact; Esc puts the eraser down;
+drag, thread open, classification whisper, and plain-note silence all
+unchanged. No console errors.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user

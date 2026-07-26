@@ -11,6 +11,10 @@ interface Props {
   // the note actually being deleted — see App.tsx and docs/DECISIONS.md
   // ("Feature B, in-thread").
   isDissolving: boolean;
+  // True while the eraser's rub-out animation plays (ink smearing, not
+  // the crumple) — see App.tsx's handleErase and docs/DECISIONS.md
+  // ("Eraser").
+  isRubbing: boolean;
   onDragStart: (id: string, e: ReactPointerEvent) => void;
   onOpen: (note: Note) => void;
   // Consent: turns a plain note into a loop (whisper tap or the note
@@ -51,6 +55,7 @@ export function NoteCard({
   y,
   isOpen,
   isDissolving,
+  isRubbing,
   onDragStart,
   onOpen,
   onCrack,
@@ -71,6 +76,7 @@ export function NoteCard({
     !isPlain && note.status === "active" && !isOpen && "note-card--in-progress",
     isOpen && "note-card--thread-open",
     isDissolving && "note-card--dissolving",
+    isRubbing && "note-card--rubbing",
   ]
     .filter(Boolean)
     .join(" ");

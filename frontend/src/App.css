@@ -997,6 +997,139 @@
   }
 }
 
+/* ---------- eraser ---------- */
+/* A physical eraser resting in the corner of the page — pick it up,
+   rub a note out, put it back. The rub-out smears ink (blur + smudge
+   jitter), deliberately nothing like the dissolve crumple. The real
+   DELETE is deferred behind the "rubbed out — undo?" whisper — see
+   App.tsx and docs/DECISIONS.md ("Eraser"). */
+
+.eraser-tool {
+  position: fixed;
+  left: 24px;
+  bottom: 22px;
+  z-index: 10;
+  width: 64px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(107, 62, 38, 0.5);
+  border-radius: 5px 9px 7px 5px;
+  /* Clay sleeve on the left, gum body on the right — the classic
+     two-tone block, in the notebook's own palette. */
+  background: linear-gradient(
+    to right,
+    var(--accent) 0,
+    var(--accent) 27%,
+    #dfa583 27%,
+    #e8bb9d 100%
+  );
+  box-shadow: var(--shadow-soft);
+  transform: rotate(-9deg);
+  opacity: 0.8;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+}
+
+.eraser-tool:hover {
+  opacity: 1;
+  transform: rotate(-9deg) translateY(-2px);
+}
+
+/* Picked up: lifted off the page, hovering slightly straighter. */
+.eraser-tool--held,
+.eraser-tool--held:hover {
+  opacity: 1;
+  transform: rotate(-4deg) translateY(-7px);
+  box-shadow: var(--shadow-lifted);
+}
+
+/* While the eraser is held, the whole page cursor becomes the eraser
+   tip, and note innards stop being clickable — a rub anywhere on a
+   card lands on the card itself. */
+.canvas--erasing,
+.canvas--erasing .note-card {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='26' height='26'><g transform='rotate(-35 13 13)'><rect x='3' y='8' width='20' height='11' rx='2.5' fill='%23e8bb9d' stroke='%236b3e26' stroke-width='1'/><rect x='3' y='8' width='7' height='11' rx='2.5' fill='%23b3502a' stroke='%236b3e26' stroke-width='1'/></g></svg>") 4 13, auto;
+}
+
+.canvas--erasing .note-card * {
+  pointer-events: none;
+}
+
+/* The rub-out: ink smearing side to side under the eraser, blurring
+   and lifting off the paper. */
+.note-card--rubbing {
+  animation: rub-out 650ms ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes rub-out {
+  0% {
+    filter: blur(0);
+    opacity: 1;
+    transform: rotate(var(--tilt, 0deg)) translateX(0);
+  }
+  18% {
+    transform: rotate(var(--tilt, 0deg)) translateX(-5px);
+  }
+  34% {
+    filter: blur(1px);
+    opacity: 0.85;
+    transform: rotate(var(--tilt, 0deg)) translateX(5px) skewX(-3deg);
+  }
+  50% {
+    transform: rotate(var(--tilt, 0deg)) translateX(-6px) skewX(3deg);
+  }
+  66% {
+    filter: blur(2.5px);
+    opacity: 0.55;
+    transform: rotate(var(--tilt, 0deg)) translateX(6px) skewX(-4deg);
+  }
+  82% {
+    transform: rotate(var(--tilt, 0deg)) translateX(-4px);
+  }
+  100% {
+    filter: blur(6px);
+    opacity: 0;
+    transform: rotate(var(--tilt, 0deg)) translateX(3px) scaleX(1.1);
+  }
+}
+
+/* The accidental-loss guard: a whisper where the note used to be, in
+   the notebook's handwriting. Lingers for the undo window (duration
+   mirrors App.tsx's ERASE_UNDO_WINDOW_MS), then it — and the note —
+   are gone for good. */
+.erase-whisper {
+  position: absolute;
+  font-family: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
+  font-size: 14px;
+  font-style: italic;
+  color: var(--ink-dim);
+  transform: rotate(-1.5deg);
+  animation: erase-whisper-away 5s linear forwards;
+  white-space: nowrap;
+}
+
+.erase-whisper button {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@keyframes erase-whisper-away {
+  0% {
+    opacity: 0.9;
+  }
+  70% {
+    opacity: 0.75;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 /* ---------- dissolve ("let it go", Feature B in-thread) ---------- */
 /* Duration mirrored in App.tsx's DISSOLVE_ANIMATION_MS — the actual
    delete is deferred until this finishes playing, like tearing out a

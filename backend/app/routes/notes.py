@@ -773,11 +773,12 @@ def keep_note(note_id: UUID, db: Session = Depends(get_db)) -> NoteOut:
 
 @router.delete("/{note_id}", status_code=204)
 def dissolve_note(note_id: UUID, db: Session = Depends(get_db)) -> None:
-    """"Let it go" on a stale-flagged note: permanently deletes it (and,
-    via the SQLite ON DELETE CASCADE foreign key, any children) — this is
-    an actual delete, not a status change, matching the "tearing out a
-    page" framing. Not restricted to stale notes at the API level; the
-    frontend only offers this action from the stale-note prompt."""
+    """Permanently deletes a note and, via the SQLite ON DELETE CASCADE
+    foreign keys, all of its children and its thread's messages — an
+    actual delete, not a status change. Serves two frontend gestures:
+    "let it go" on a stale-flagged note (tearing out a page) and the
+    eraser's rub-out (any note, after its undo whisper expires). Not
+    restricted at the API level."""
     note = db.get(Note, str(note_id))
     if note is None:
         raise HTTPException(status_code=404, detail="note not found")
