@@ -58,6 +58,14 @@ interface PendingErase {
   timer: number;
 }
 
+// The sheet of paper is bigger than the window: a fixed large surface
+// inside the scroll container, origin at the top-left so every stored
+// x/y renders exactly where it always did. Scrolling (trackpad both
+// axes, or dragging empty paper) slides the sheet around. See
+// docs/DECISIONS.md ("Scrollable canvas").
+const SURFACE_WIDTH = 3000;
+const SURFACE_HEIGHT = 2000;
+
 export default function App() {
   // Which notebook page is showing — four renderings of the same loops
   // data, one per anti-avoidance mechanic. See docs/DECISIONS.md
@@ -87,7 +95,15 @@ export default function App() {
   const [pendingErase, setPendingErase] = useState<Record<string, PendingErase>>({});
 
   const canvasRef = useRef<HTMLDivElement>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
+  // Drag-to-pan on empty paper: initial pointer + scroll positions.
+  const panningRef = useRef<{
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    scrollTop: number;
+  } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -114,18 +130,54 @@ export default function App() {
     refresh();
   }, [refresh, page]);
 
+  // Coordinates are relative to the paper surface, not the scroll
+  // viewport — the surface's bounding rect already moves with scroll,
+  // so this is scroll-position-proof by construction.
   function toCanvasCoords(clientX: number, clientY: number): Point {
-    const el = canvasRef.current;
+    const el = surfaceRef.current;
     if (!el) return { x: clientX, y: clientY };
     const rect = el.getBoundingClientRect();
-    return { x: clientX - rect.left + el.scrollLeft, y: clientY - rect.top + el.scrollTop };
+    return { x: clientX - rect.left, y: clientY - rect.top };
   }
 
   function handleCanvasDoubleClick(e: React.MouseEvent) {
     if (eraserMode) return; // you write with a pen, not an eraser
-    if (e.target !== canvasRef.current) return; // ignore double-clicks on a card
+    if (e.target !== surfaceRef.current) return; // ignore double-clicks on a card
     setDraft({ kind: "new-note", ...toCanvasCoords(e.clientX, e.clientY) });
   }
+
+  // Dragging empty paper slides the sheet (scrolls the container);
+  // dragging a card moves the card — the two can't conflict because a
+  // card's pointerdown never reaches the surface (stopPropagation in
+  // handleDragStart), and this only engages when the press landed on
+  // bare paper.
+  function handlePanStart(e: ReactPointerEvent) {
+    if (e.target !== surfaceRef.current || e.button !== 0) return;
+    const el = canvasRef.current;
+    if (!el) return;
+    panningRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      scrollLeft: el.scrollLeft,
+      scrollTop: el.scrollTop,
+    };
+    window.addEventListener("pointermove", handlePanMove);
+    window.addEventListener("pointerup", handlePanEnd);
+  }
+
+  const handlePanMove = useCallback((e: PointerEvent) => {
+    const pan = panningRef.current;
+    const el = canvasRef.current;
+    if (!pan || !el) return;
+    el.scrollLeft = pan.scrollLeft - (e.clientX - pan.startX);
+    el.scrollTop = pan.scrollTop - (e.clientY - pan.startY);
+  }, []);
+
+  const handlePanEnd = useCallback(() => {
+    panningRef.current = null;
+    window.removeEventListener("pointermove", handlePanMove);
+    window.removeEventListener("pointerup", handlePanEnd);
+  }, [handlePanMove]);
 
   // Picking up / putting down the eraser. Picking it up closes any open
   // thread — you can't rub out a page you're mid-conversation with.
@@ -452,11 +504,17 @@ export default function App() {
       <div
         className={`canvas${eraserMode ? " canvas--erasing" : ""}`}
         ref={canvasRef}
-        onDoubleClick={handleCanvasDoubleClick}
       >
         {notes.filter((n) => n.parent_id === null && !pendingErase[n.id]).length === 0 &&
           !draft && <p className="canvas__empty">a blank page — double-click and write</p>}
 
+        <div
+          className="canvas__surface"
+          ref={surfaceRef}
+          style={{ width: SURFACE_WIDTH, height: SURFACE_HEIGHT }}
+          onDoubleClick={handleCanvasDoubleClick}
+          onPointerDown={handlePanStart}
+        >
         {notes
           .filter((note) => note.parent_id === null && !pendingErase[note.id])
           .map((note) => {
@@ -519,6 +577,7 @@ export default function App() {
             </button>
           </div>
         ))}
+        </div>
       </div>
       )}
 

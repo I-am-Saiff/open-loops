@@ -1441,6 +1441,56 @@ Verified live across all four pages: v1 canvas/threads, v2 ghost ink,
 v3 die, v4 fade all render unchanged apart from the intended tweaks;
 no console errors.
 
+## 2026-07-26 — Scrollable canvas: a fixed big sheet, not an infinite one
+
+The v1 canvas is now a 3000×2000 sheet inside the scroll container,
+scrollable on both axes. Decisions:
+
+- **Fixed surface, origin preserved.** A `.canvas__surface` div of
+  `SURFACE_WIDTH × SURFACE_HEIGHT` (3000×2000, App.tsx) with its
+  top-left at the old origin — every stored x/y renders exactly where
+  it always did, no data migration, no coordinate translation. Chose
+  a fixed sheet over a truly infinite canvas (transform-based
+  panning, negative coordinates): native `overflow: auto` gives
+  trackpad two-axis scrolling, momentum, and correct
+  `getBoundingClientRect` behavior for free, and a notebook page
+  *should* have edges. If 3000×2000 ever feels small, bump the
+  constants.
+- **Coordinates are surface-relative by construction.**
+  `toCanvasCoords` now measures against the surface's bounding rect
+  (which already moves with scroll) instead of adding
+  scrollLeft/scrollTop by hand — double-click-to-write anywhere on
+  the sheet stores correct coordinates at any scroll position.
+  Verified live: a note written at scroll (500, 300) stored
+  x/y matching the click point exactly and re-rendered in place.
+- **Drag disambiguation is structural, not heuristic.** A card's
+  `pointerdown` stops propagation (it always did, for dragging), so
+  the surface's own pointerdown only ever fires on bare paper — drag
+  on a note moves the note, drag on paper slides the sheet
+  (scrollLeft/Top arithmetic on the container). No thresholds, no
+  timers, no conflict. The eraser keeps working scrolled: the undo
+  whisper is positioned on the surface, so it stays pinned to where
+  the erased note was on the sheet.
+- **No scrollbar chrome.** `scrollbar-width: none` +
+  `::-webkit-scrollbar { display: none }` on the canvas — sliding a
+  big sheet of paper around, not operating a viewport. Same
+  treatment applied to v2/v4's vertical scrolling for consistency.
+- **v2/v3/v4: vertical-only where it makes sense, none for the die.**
+  v2 (ink) and v4 (fade) are reading lists, not spatial canvases —
+  they already scroll vertically, which *is* the right scrollable
+  treatment for a list on paper; giving them a 2D pan would add
+  nothing (their entries have no x/y). v3 (dice) deliberately stays a
+  single centered die in the viewport — the whole mechanic is "one
+  thing in front of you," and a scrollable dice page would just be
+  empty paper around it.
+
+Verified live: two-axis trackpad scroll and drag-on-paper panning
+both slide the sheet; notes render at their original positions;
+double-click far out on the sheet stores correct coords; dragging a
+card moves the card without panning; erase + whisper + expiry work
+mid-scroll; v2/v3/v4 unchanged. No console errors (one stale vite
+HMR complaint from mid-edit, gone on reload).
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
