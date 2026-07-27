@@ -1575,6 +1575,78 @@ Verified: local SQLite still imports, `create_all`s, and serves 200s
 after the change; URL normalization and scheme detection confirmed for
 `postgres://`, `postgresql://`, and `sqlite://`.
 
+## 2026-07-27 — Deployment: Vercel (frontend) + Railway (FastAPI + Postgres)
+
+Public repo + a live URL to send a client. The key never goes public.
+
+**Path chosen — Option A: frontend on Vercel, FastAPI backend on
+Railway with Railway-managed Postgres.** Picked over full-serverless-
+on-Vercel because Railway runs FastAPI as a real persistent process
+(normal SQLAlchemy connection pooling, no serverless cold-start / DB-
+connection quirks, no SQLite-on-serverless problem), gives managed
+Postgres in the same project, and both the `vercel` and `railway` CLIs
+were already authenticated so the whole deploy is scriptable.
+
+**API-key safety (the hard rule).** `GROQ_API_KEY` is gitignored
+(`.env`), was never committed, and its value appears nowhere in git
+history — verified before going public. All Groq calls are server-side
+only (`llm_client.py` uses `requests` from the backend); the frontend
+never sees the key and it is never in the client bundle. In production
+the key lives solely as a Railway env var on the backend service, set
+via `railway variable set --stdin` so the value never entered a shell
+argument or history. `.env.example` ships with an empty
+`GROQ_API_KEY=`.
+
+**Hosts & URLs**
+- Frontend (Vite static): Vercel project `saif-ayesha/open-loops` →
+  https://open-loops-inky.vercel.app (stable production alias, follows
+  each `--prod` deploy).
+- Backend (FastAPI): Railway project `open-loops`, service `backend`
+  → https://backend-production-e05a.up.railway.app
+- Database: Railway Postgres service `Postgres`, same project (private
+  networking to the backend).
+- Public repo: https://github.com/I-am-Saiff/open-loops
+
+**Environment variables (all set on the host, never in the repo)**
+- Backend (Railway `backend` service):
+  - `GROQ_API_KEY` — the secret, server-side only.
+  - `DATABASE_URL` — Railway reference `${{Postgres.DATABASE_URL}}`,
+    resolves to the managed Postgres `postgresql://` string.
+  - `ALLOWED_ORIGINS` —
+    `https://open-loops-inky.vercel.app,https://open-loops-saif-ayesha.vercel.app,http://localhost:5173,http://localhost:4173`
+- Frontend (Vercel, build-time): `VITE_API_BASE_URL` =
+  `https://backend-production-e05a.up.railway.app` (Vite bakes this
+  into the bundle at build; it's a public URL, not a secret).
+
+**CORS.** Was wildcard (`allow_origins=["*"]`) for the localhost
+prototype; now an env-driven allowlist (`ALLOWED_ORIGINS`) so
+production only accepts the deployed Vercel origins (+ localhost for
+dev). No cookies/credentials are used, so this is a plain browser-
+origin allowlist. Verified the deployed backend returns
+`access-control-allow-origin: https://open-loops-inky.vercel.app`.
+
+**Build/runtime config added** (`backend/`): `Procfile`
+(`uvicorn app.main:app --host 0.0.0.0 --port $PORT`), `.python-version`
+(3.11), `.railwayignore` (excludes `.venv`, `*.db`). See the separate
+SQLite→Postgres entry for the DB-layer changes.
+
+**Demo seed data.** Fresh Postgres starts empty (local SQLite's
+throwaway test rows were not migrated). To make the client link
+presentable, a small curated set was written live through the normal
+API: a plain note (stays silent), a fully-completed "cook biryani
+thursday" loop, two in-progress cracked loops, and a couple of plain
+notes — so v2/v3/v4 show their mechanics rather than empty states.
+This is demo content, not fixtures; it can be erased in-app.
+
+**Verified live end-to-end on https://open-loops-inky.vercel.app:**
+plain note saved silently (Groq classified not-a-task); "cook biryani
+thursday" surfaced the whisper; cracking it produced a real Groq
+decompose and the companion revealed one step at a time; walked the
+thread fully to done (API confirmed parent `status=done` with all 5
+children done — completion cascade works on Postgres); v2 (ink), v3
+(dice), v4 (fade) all load and render their mechanics; no console
+errors. Groq key confirmed reachable server-side in production.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
