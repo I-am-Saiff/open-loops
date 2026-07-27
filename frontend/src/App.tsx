@@ -15,6 +15,7 @@ import {
   peekNote,
   sendThreadMessage,
   startThread,
+  subscribeBusy,
   updateNoteText,
 } from "./api";
 import { ChatThread } from "./ChatThread";
@@ -66,6 +67,13 @@ interface PendingErase {
 const SURFACE_WIDTH = 3000;
 const SURFACE_HEIGHT = 2000;
 
+// Only surface the "working" indicator once a request has been
+// out for this long — a warm request returns well under this, so the
+// indicator never flickers on fast actions; a cold backend or a Groq
+// decompose crosses it and shows the notebook is thinking. See
+// docs/DECISIONS.md ("Loading indicator").
+const BUSY_INDICATOR_DELAY_MS = 300;
+
 export default function App() {
   // Which notebook page is showing — four renderings of the same loops
   // data, one per anti-avoidance mechanic. See docs/DECISIONS.md
@@ -93,6 +101,9 @@ export default function App() {
   const [rubbing, setRubbing] = useState<Record<string, boolean>>({});
   // Notes in the undo window: hidden, whisper up, DELETE on a timer.
   const [pendingErase, setPendingErase] = useState<Record<string, PendingErase>>({});
+  // Whether the subtle "working" indicator is showing — driven by the
+  // API busy tracker, gated behind BUSY_INDICATOR_DELAY_MS.
+  const [showBusy, setShowBusy] = useState(false);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
@@ -129,6 +140,25 @@ export default function App() {
   useEffect(() => {
     refresh();
   }, [refresh, page]);
+
+  // Show the "working" indicator only if a request stays in flight past
+  // the delay — clearing the timer on a quick finish keeps warm actions
+  // silent while a cold/slow one surfaces it.
+  useEffect(() => {
+    let timer: number | undefined;
+    const unsubscribe = subscribeBusy((busy) => {
+      window.clearTimeout(timer);
+      if (busy) {
+        timer = window.setTimeout(() => setShowBusy(true), BUSY_INDICATOR_DELAY_MS);
+      } else {
+        setShowBusy(false);
+      }
+    });
+    return () => {
+      window.clearTimeout(timer);
+      unsubscribe();
+    };
+  }, []);
 
   // Coordinates are relative to the paper surface, not the scroll
   // viewport — the surface's bounding rect already moves with scroll,
@@ -579,6 +609,21 @@ export default function App() {
         ))}
         </div>
       </div>
+      )}
+
+      {/* The notebook, thinking. A quiet handwritten aside with a pen
+          tapping ink — shows any slow in-flight action is working, so
+          a cold backend or a Groq call never reads as frozen. See
+          docs/DECISIONS.md ("Loading indicator"). */}
+      {showBusy && (
+        <div className="busy-indicator" role="status" aria-live="polite">
+          <span className="busy-indicator__dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span>one moment…</span>
+        </div>
       )}
 
       {/* The eraser: a physical object resting in the corner of the

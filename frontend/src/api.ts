@@ -2,8 +2,46 @@ import type { CompleteResponse, Message, Note } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
+// Global in-flight tracker. Every network call routes through the two
+// fetch wrappers below, so subscribing here catches ALL of them — the
+// on-load list, note saves, classify, decompose/thread, advance — with
+// no per-handler wiring. The UI uses this to show a subtle "working"
+// indicator so a slow request (a cold backend, or a Groq call) never
+// looks frozen. See docs/DECISIONS.md ("Loading indicator").
+let inFlight = 0;
+type BusyListener = (busy: boolean) => void;
+const busyListeners = new Set<BusyListener>();
+
+export function subscribeBusy(listener: BusyListener): () => void {
+  busyListeners.add(listener);
+  listener(inFlight > 0);
+  return () => {
+    busyListeners.delete(listener);
+  };
+}
+
+// Only notify on the false<->true edge — overlapping requests keep the
+// indicator steady rather than flickering it per request.
+function changeInFlight(delta: number): void {
+  const wasBusy = inFlight > 0;
+  inFlight += delta;
+  const isBusy = inFlight > 0;
+  if (wasBusy !== isBusy) {
+    for (const listener of busyListeners) listener(isBusy);
+  }
+}
+
+async function trackedFetch(input: string, init?: RequestInit): Promise<Response> {
+  changeInFlight(1);
+  try {
+    return await fetch(input, init);
+  } finally {
+    changeInFlight(-1);
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await trackedFetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...init,
   });
@@ -60,8 +98,9 @@ export function keepNote(id: string): Promise<Note> {
 
 // Not routed through request<T> — DELETE returns 204 with no body, and
 // request<T> always calls res.json(), which would throw on an empty body.
+// Still goes through trackedFetch so the busy indicator covers erases.
 export async function dissolveNote(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/notes/${id}`, { method: "DELETE" });
+  const res = await trackedFetch(`${API_BASE}/notes/${id}`, { method: "DELETE" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail ?? `${res.status} ${res.statusText}`);

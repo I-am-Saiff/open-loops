@@ -1062,6 +1062,87 @@
   }
 }
 
+/* ---------- "working" indicator ---------- */
+/* The notebook thinking out loud: a faint handwritten aside pinned to
+   the bottom of the page while a slow request is in flight (cold
+   backend, Groq call). Deliberately quiet — it reassures, it doesn't
+   announce. Only appears after BUSY_INDICATOR_DELAY_MS so fast actions
+   stay silent. See docs/DECISIONS.md ("Loading indicator"). */
+
+.busy-indicator {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  z-index: 12;
+  transform: translateX(-50%) rotate(-0.6deg);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 15px;
+  background: var(--card-front);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-btn);
+  box-shadow: var(--shadow-soft);
+  font-family: var(--font-hand);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--ink-dim);
+  /* Animate opacity only — the transform above stays put. */
+  animation: busy-fade-in 0.25s ease both;
+}
+
+@keyframes busy-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.9;
+  }
+}
+
+.busy-indicator__dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* Three ink dots bobbing in sequence — a pen tapping the page. */
+.busy-indicator__dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.35;
+  animation: busy-dot 1s ease-in-out infinite;
+}
+
+.busy-indicator__dots i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.busy-indicator__dots i:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes busy-dot {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 0.95;
+    transform: translateY(-3px);
+  }
+}
+
+/* Respect reduced-motion: keep the reassurance, drop the bob. */
+@media (prefers-reduced-motion: reduce) {
+  .busy-indicator__dots i {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
 /* ---------- eraser ---------- */
 /* A physical eraser resting in the corner of the page — pick it up,
    rub a note out, put it back. The rub-out smears ink (blur + smudge
