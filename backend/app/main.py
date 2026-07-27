@@ -26,11 +26,20 @@ app.add_middleware(
 )
 
 
-# Lightweight health check for the platform + a friendly root so hitting
-# the bare API URL isn't a 404.
+# A friendly root so hitting the bare API URL isn't a 404.
 @app.get("/")
 def root() -> dict:
     return {"service": "Open Loops API", "status": "ok"}
+
+
+# Dedicated liveness endpoint for uptime monitoring — a plain, cheap 200
+# meaning "the process is up and serving". Deliberately does NOT touch
+# the DB or Groq, so a monitor pinging it can't false-alarm on a slow
+# dependency; it answers exactly one question: is the app down? See
+# docs/DECISIONS.md ("Uptime monitor").
+@app.get("/health")
+def health() -> dict:
+    return {"status": "ok"}
 
 
 app.include_router(notes_router)
