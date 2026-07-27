@@ -4,3 +4,7 @@ sqlalchemy==2.0.35
 pydantic==2.9.2
 pydantic-settings==2.5.2
 requests==2.32.3
+# Postgres driver — only imported when DATABASE_URL is a postgresql:// URL
+# (production). Local dev stays on SQLite and never loads this. See
+# docs/DECISIONS.md ("SQLite→Postgres swap").
+psycopg2-binary==2.9.9

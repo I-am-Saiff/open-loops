@@ -1537,6 +1537,44 @@ survived a reload; double-click edit behaved identically and added a
 line; the classification whisper fired on both multi-line notes. No
 console errors.
 
+## 2026-07-27 — SQLite→Postgres swap: one engine, scheme-driven, dev stays on SQLite
+
+Going live needs a database a host can persist; serverless can't keep a
+SQLite file. The swap was already behind SQLAlchemy, so it stayed
+contained to `db.py` + one requirements line:
+
+- **Env-driven, SQLite default.** `database_url` still defaults to
+  `sqlite:///./openloops.db`, so local dev is unchanged and
+  zero-setup. Production sets `DATABASE_URL` to the host's
+  `postgresql://` string. Nothing else in the app knows which backend
+  it's on.
+- **The two SQLite-only bits now branch on the scheme.**
+  `connect_args={"check_same_thread": False}` and the
+  `PRAGMA foreign_keys=ON` connect-listener are SQLite-specific — both
+  would error against psycopg2. They now only apply when the URL is
+  `sqlite`. Postgres enforces the same `ON DELETE CASCADE` FK
+  constraints natively (they're declared with `ondelete="CASCADE"` in
+  models.py), so the eraser/"let it go" delete cascade works there
+  without the PRAGMA. Postgres gets `pool_pre_ping=True` to survive a
+  hosted DB's idle connection drops.
+- **`postgres://` → `postgresql://` normalization.** Railway/Heroku-
+  style hosts hand out the legacy `postgres://` scheme that SQLAlchemy
+  2.0 rejects; `db.py` rewrites it. Driver is `psycopg2-binary` (the
+  default dialect for `postgresql://`, so the URL needs no `+driver`
+  suffix). It's only imported when a Postgres URL is used, so local
+  SQLite dev never loads it.
+- **Schema creation unchanged.** `Base.metadata.create_all` on startup
+  (main.py) works against Postgres too — creates tables and the
+  `NoteStatus`/`NoteKind`/etc. enum types on first boot, no-ops after.
+  No migration tooling introduced (still the standing prototype
+  choice). A fresh Postgres starts empty; demo content is written live
+  rather than migrated from the local SQLite (which holds throwaway
+  test rows).
+
+Verified: local SQLite still imports, `create_all`s, and serves 200s
+after the change; URL normalization and scheme detection confirmed for
+`postgres://`, `postgresql://`, and `sqlite://`.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
