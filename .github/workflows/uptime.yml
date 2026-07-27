@@ -1,0 +1,45 @@
+name: uptime
+
+# Down-alert for the deployed backend — NOT keep-warm. Railway doesn't
+# sleep this service; this only fires if /health stops returning 200.
+# A failed run triggers GitHub's default "workflow failed" email to the
+# repo owner, so a drop during demo week reaches your inbox. See
+# docs/DECISIONS.md ("Uptime monitor").
+#
+# Note: GitHub cron is best-effort and can lag a few minutes under load.
+# For tighter external checks, pair this with UptimeRobot (see README /
+# the delivery notes) — this workflow is the zero-account fallback.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *" # roughly every 10 minutes
+  workflow_dispatch: {} # manual "check now" button in the Actions tab
+
+# One health check in flight at a time; a new run cancels a stuck one.
+concurrency:
+  group: uptime
+  cancel-in-progress: true
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend /health
+        env:
+          HEALTH_URL: https://backend-production-e05a.up.railway.app/health
+        run: |
+          # Three tries with a short gap so a single transient blip (a
+          # brief network hiccup, a redeploy swap) doesn't page you —
+          # only a sustained failure fails the job and sends the alert.
+          for attempt in 1 2 3; do
+            code=$(curl -s -o /tmp/health_body -w "%{http_code}" --max-time 25 "$HEALTH_URL" || echo "000")
+            body=$(cat /tmp/health_body 2>/dev/null)
+            echo "attempt ${attempt}: HTTP ${code} — ${body}"
+            if [ "$code" = "200" ]; then
+              echo "Open Loops backend is healthy."
+              exit 0
+            fi
+            [ "$attempt" -lt 3 ] && sleep 15
+          done
+          echo "::error title=Open Loops backend DOWN::/health did not return 200 after 3 attempts over ~45s. Check Railway service 'backend' (project open-loops)."
+          exit 1

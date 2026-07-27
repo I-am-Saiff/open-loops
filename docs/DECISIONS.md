@@ -1683,6 +1683,32 @@ exhaustion/suspension, for which the reliable fix is the Hobby plan
 ($5/mo), not a ping. The indicator above covers the inherent
 1–3s Groq latency regardless.
 
+## 2026-07-27 — Uptime monitor: dedicated /health + GitHub Actions down-alert
+
+Wanted an alert if the deployed backend drops during demo week (a
+down-alert, explicitly not keep-warm — Railway doesn't sleep it).
+
+- **Dedicated `/health` endpoint.** Added alongside `/` — a plain,
+  cheap `200 {"status":"ok"}` that deliberately touches neither
+  Postgres nor Groq, so a monitor pinging it every few minutes can't
+  false-alarm on a slow dependency. It answers exactly one question:
+  is the app process up? Verified live: `GET /health` → `HTTP 200`,
+  `content-type: application/json`.
+- **Monitor: GitHub Actions scheduled workflow**
+  (`.github/workflows/uptime.yml`), not UptimeRobot — a true external
+  monitor needs an account, and account creation / password entry is
+  out of scope for the agent to do on the owner's behalf. The workflow
+  runs ~every 10 min (plus a manual "check now" dispatch), pings
+  `/health` with 3 tries over ~45s (so a transient blip or a redeploy
+  swap doesn't page), and fails loudly otherwise. A failed run triggers
+  GitHub's default "workflow failed" email to the repo owner — the
+  zero-account, zero-secret path to an inbox alert.
+  - Tradeoffs vs UptimeRobot: GitHub cron is best-effort (can lag a few
+    min) and the alert goes to the owner's GitHub notification email
+    (not an arbitrary address without adding an SMTP secret). For a
+    tighter external check to a chosen address, UptimeRobot's free tier
+    (5-min checks) is the manual add-on — steps handed to the owner.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
