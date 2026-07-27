@@ -1647,6 +1647,42 @@ children done — completion cascade works on Postgres); v2 (ink), v3
 (dice), v4 (fade) all load and render their mechanics; no console
 errors. Groq key confirmed reachable server-side in production.
 
+## 2026-07-27 — Loading indicator: one global tracker, gated behind a delay
+
+The deployed backend can be slow on a request (a Groq decompose is
+inherently 1–3s; a suspended/waking host could be slower), and a
+frozen-looking canvas reads as broken to a client. Added a subtle
+"working" indicator:
+
+- **Tracked at the API layer, not per handler.** Every call routes
+  through two fetch wrappers in `api.ts` that bump a shared in-flight
+  counter; `subscribeBusy` notifies listeners only on the false↔true
+  edge. This catches *every* request — the on-load list, saves,
+  classify, decompose/thread, advance, erase — with zero per-handler
+  wiring, so nothing can slip through and look frozen.
+- **Gated behind a ~300ms delay.** App.tsx starts a timer when busy
+  goes true and only shows the indicator if it's still busy at the
+  deadline; a warm request finishes first and the indicator never
+  flickers. So it appears exactly when it's useful (slow/cold
+  requests, Groq calls) and stays silent otherwise.
+- **Notebook-styled, quiet.** A faint handwritten "one moment…" pill
+  pinned bottom-center with three ink dots bobbing like a pen tapping
+  the page (`prefers-reduced-motion` drops the bob). Uses existing
+  paper tokens; `role=status`/`aria-live=polite` for assistive tech.
+
+Verified live: cracking a loop on the deployed URL showed
+"one moment…" during the decompose and it vanished when the first step
+arrived; no console errors.
+
+Note on hosting/keep-warm: Railway does **not** auto-sleep services
+the way a Render free tier does — the backend runs continuously
+(measured ~0.5s responses, no cold-start spike), and app-sleeping
+(opt-in "Serverless") was deliberately left OFF. So a keep-warm cron
+is unnecessary here; the real low-tier risk is trial-credit
+exhaustion/suspension, for which the reliable fix is the Hobby plan
+($5/mo), not a ping. The indicator above covers the inherent
+1–3s Groq latency regardless.
+
 ## Open items / known incomplete for v1
 
 - No auth: all requests operate against a single hardcoded demo user
