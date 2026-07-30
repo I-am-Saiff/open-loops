@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -19,25 +19,18 @@ class NoteOut(BaseModel):
     x: float
     y: float
     status: str
-    created_at: datetime
-    # Feature B: computed, not stored — see docs/DECISIONS.md.
-    stale: bool
-    # Feature C: set by PATCH /notes/{id}/link — see docs/DECISIONS.md.
-    linked_note_id: Optional[UUID]
-    # When this note was last "looked at" (Feature B's peek). Exposed for
-    # the v4 fade page, whose ink opacity is a function of time since
-    # last interaction — see docs/DECISIONS.md ("v4 shrinking page").
-    last_peeked_at: Optional[datetime]
-    # Notebook first: 'plain' (ink on paper, no machinery) or 'loop'
-    # (cracked on consent). See docs/DECISIONS.md ("Notebook first").
+    # 'plain' (a raw brain-dump line) or 'loop' (designed, has steps).
     kind: str
-    # None = unclassified/classification failed; True surfaces only the
-    # quiet crack affordance.
-    task_like: Optional[bool]
+    created_at: datetime
+
+
+# Notebook first: raw brain-dump lines stay editable.
+class NoteUpdate(BaseModel):
+    text: str = Field(min_length=1)
 
 
 class CrackOpenRequest(BaseModel):
-    # Ordered sub-step texts — list order decides which one becomes the
+    # Ordered step texts — list order decides which one becomes the
     # front-facing 'active' step first. See docs/DECISIONS.md.
     steps: List[str] = Field(min_length=1)
 
@@ -57,21 +50,12 @@ class CompleteResponse(BaseModel):
     parent: Optional[NoteOut] = None
 
 
-# Feature C: cross-loop merge. Detected as part of decompose (below), only
-# ever describing a NEW proposed step (not yet a real note) matched
-# against a real pending step of some other loop. See docs/DECISIONS.md.
-class MergeSuggestion(BaseModel):
-    new_step: str
-    existing_note_id: UUID
-    existing_step: str
-
-
-# Feature A: LLM-proposed decomposition. A preview only — decompose never
-# creates notes itself, see docs/DECISIONS.md.
+# Loop design's strict step-proposer. A preview only — decompose never
+# creates notes itself; the Loop design overlay commits the (edited)
+# list via crack-open. See docs/IA.md ("Loop design").
 class DecomposeStepsProposal(BaseModel):
     type: Literal["steps"] = "steps"
     steps: List[str] = Field(min_length=1)
-    merge_suggestion: Optional[MergeSuggestion] = None
 
 
 class DecomposeSkipProposal(BaseModel):
@@ -79,28 +63,4 @@ class DecomposeSkipProposal(BaseModel):
     suggestion: str
 
 
-class LinkRequest(BaseModel):
-    other_note_id: UUID
-
-
-# Notebook first: plain notes stay editable — Apple-Notes-style text
-# updates. See docs/DECISIONS.md ("Notebook first").
-class NoteUpdate(BaseModel):
-    text: str = Field(min_length=1)
-
-
-# Chat-thread redesign. One thread per top-level loop, see
-# docs/DECISIONS.md ("Chat thread: schema and orchestration").
-class MessageOut(BaseModel):
-    id: UUID
-    note_id: UUID
-    sender: str
-    kind: str
-    text: str
-    related_note_id: Optional[UUID]
-    resolved: bool
-    created_at: datetime
-
-
-class SendMessageRequest(BaseModel):
-    text: str = Field(min_length=1)
+DecomposeProposal = Union[DecomposeStepsProposal, DecomposeSkipProposal]

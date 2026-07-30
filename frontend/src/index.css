@@ -1,48 +1,58 @@
+/* Design tokens — the single source of truth from docs/DESIGN.md.
+   This replaces the old warm-paper notebook palette entirely: cool
+   ink-on-paper, one "wet ink" accent used only as state, precise shape,
+   a small motion budget. Do not reintroduce warm/cream values here. */
 :root {
-  --paper: #f3ecda;
-  /* Only used for the header's perforation-style border now — the
-     ruled-lines canvas background was removed. Warm, like everything
-     else on the page (was a leftover cool blue-grey from the ruled-
-     lines era). See docs/DECISIONS.md ("Blank paper background"). */
-  --paper-line: #d3c7a4;
-  --ink: #3a3226;
-  --ink-dim: #8c8272;
-  --card: #fbf6e8;
-  --card-front: #fffcf2;
-  --fold: #e3dac2;
-  --accent: #b3502a;
-  --accent-ink: #fff8ec;
-  --border: #d8cca9;
-  --shadow-soft: 0 1px 2px rgba(60, 45, 20, 0.12), 0 4px 10px rgba(60, 45, 20, 0.1);
-  --shadow-lifted: 0 3px 6px rgba(60, 45, 20, 0.16), 0 10px 22px rgba(60, 45, 20, 0.18);
+  /* Color (DESIGN.md §2) — cool-neutral ink on paper. */
+  --paper: #f4f4f1; /* the page */
+  --surface: #fcfcfa; /* the one raised plane: a live step */
+  --ink: #17171a; /* settled ink — primary text */
+  --ink-muted: #73736e; /* metadata, done items, secondary */
+  --hairline: #e4e3de; /* dividers only, never a full box */
+  --accent: #223a6b; /* "wet ink" — live/now marker and focus, sparingly */
 
-  /* The two voices of the notebook: handwriting for anything the
-     notebook "says" or the user "wrote in ink" (notes, whispers,
-     titles), and a quiet serif for typed/UI text (buttons, inputs,
-     hints). Every font-family in the app resolves to one of these. */
-  --font-hand: "Bradley Hand", "Segoe Print", "Noteworthy", cursive;
-  --font-ui: Georgia, "Iowan Old Style", Palatino, "Times New Roman", serif;
+  /* Typography (DESIGN.md §3). Newsreader = the reading/ink voice;
+     IBM Plex Sans = the instrument voice; Plex Mono = annotations. */
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-ui: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
 
-  /* Hand-drawn corner radii — deliberately uneven so nothing reads as
-     machine-rounded, but drawn from one shared set so the unevenness
-     is consistent: cards get the big wobble, buttons/inputs the small
-     one. */
-  --radius-card: 2px 10px 4px 9px;
-  --radius-btn: 3px 8px 3px 8px;
-  --radius-input: 2px 6px 2px 6px;
+  /* Spacing (DESIGN.md §4) — 4px base, 8px rhythm. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
 
-  /* Intentional focus ring (accent color, low opacity) — replaces the
-     browser's default focus outline everywhere, see the button/input
-     rules below. */
-  --focus-ring: rgba(179, 80, 42, 0.45);
+  /* Shape (DESIGN.md §4) — uniform, small, precise radii. */
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-modal: 16px;
 
-  /* This is deliberately not theme-aware (no prefers-color-scheme swap):
-     the whole pitch is "looks like a physical paper notebook," and paper
-     doesn't have a dark mode. See docs/DECISIONS.md. */
+  /* Elevation (DESIGN.md §4) — one shadow, one meaning: "this is live". */
+  --shadow-live: 0 1px 2px rgba(23, 23, 26, 0.05), 0 8px 24px rgba(23, 23, 26, 0.07);
+
+  /* Motion (DESIGN.md §5) — a small budget, spent deliberately. */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-settle: 260ms;
+  --dur-slow: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-develop: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  --focus-ring: rgba(34, 58, 107, 0.5); /* accent, low opacity */
+
+  /* Paper has no dark mode — the identity is a single deliberate look. */
   color-scheme: light;
   color: var(--ink);
   background: var(--paper);
-  font: 16px/1.5 var(--font-ui);
+  font: 16px/1.55 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 * {
@@ -55,14 +65,12 @@ body {
 
 button {
   font: inherit;
+  color: inherit;
   cursor: pointer;
 }
 
-/* Kill the browser's default dashed focus outline everywhere in the app
-   (it read as generic-web-app chrome on top of the paper look), and
-   replace it with a soft accent-colored glow that only shows up for
-   keyboard/assistive-tech navigation, not every mouse click —
-   :focus-visible, not :focus. */
+/* Replace the browser's default focus outline with a soft accent ring,
+   shown only for keyboard/assistive navigation (:focus-visible). */
 button,
 input,
 textarea,

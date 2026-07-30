@@ -5,7 +5,6 @@ from app.config import settings
 from app.db import engine
 from app.models import Base
 from app.routes.notes import router as notes_router
-from app.routes.threads import router as threads_router
 
 # Create the schema on startup instead of a manual migration step — zero
 # setup to run locally, and on first Postgres boot it creates the tables
@@ -43,4 +42,3 @@ def health() -> dict:
 
 
 app.include_router(notes_router)
-app.include_router(threads_router)

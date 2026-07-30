@@ -1,13 +1,16 @@
-import type { CompleteResponse, Message, Note } from "./types";
+import type {
+  CompleteResponse,
+  CrackOpenResponse,
+  DecomposeProposal,
+  Note,
+} from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
-// Global in-flight tracker. Every network call routes through the two
-// fetch wrappers below, so subscribing here catches ALL of them — the
-// on-load list, note saves, classify, decompose/thread, advance — with
-// no per-handler wiring. The UI uses this to show a subtle "working"
-// indicator so a slow request (a cold backend, or a Groq call) never
-// looks frozen. See docs/DECISIONS.md ("Loading indicator").
+// Global in-flight tracker. Every network call routes through the fetch
+// wrapper below, so subscribing here catches all of them with no
+// per-handler wiring — used to show a subtle "working" indicator so a
+// slow request (cold backend, or a decompose call) never looks frozen.
 let inFlight = 0;
 type BusyListener = (busy: boolean) => void;
 const busyListeners = new Set<BusyListener>();
@@ -56,23 +59,11 @@ export function listNotes(): Promise<Note[]> {
   return request<Note[]>("/notes");
 }
 
-export function createNote(input: {
-  text: string;
-  x: number;
-  y: number;
-  parent_id?: string;
-}): Promise<Note> {
+export function createNote(input: { text: string; x?: number; y?: number }): Promise<Note> {
   return request<Note>("/notes", {
     method: "POST",
     body: JSON.stringify(input),
   });
-}
-
-// Notebook first — recognition, not conversation. Called after a note
-// saves (never blocking the save); best-effort on the backend, so a
-// failure just means no whisper. See docs/DECISIONS.md.
-export function classifyNote(id: string): Promise<Note> {
-  return request<Note>(`/notes/${id}/classify`, { method: "POST" });
 }
 
 export function updateNoteText(id: string, text: string): Promise<Note> {
@@ -82,66 +73,33 @@ export function updateNoteText(id: string, text: string): Promise<Note> {
   });
 }
 
-export function completeNote(id: string): Promise<CompleteResponse> {
-  return request<CompleteResponse>(`/notes/${id}/complete`, {
+// Loop design's AI touchpoint: propose steps (or a skip). Side-effect
+// free — nothing is created until crack-open commits the edited list.
+export function decomposeNote(id: string): Promise<DecomposeProposal> {
+  return request<DecomposeProposal>(`/notes/${id}/decompose`, { method: "POST" });
+}
+
+// Commit the designed step list: the note becomes a loop and moves to
+// Open loops with its first step live.
+export function crackOpen(id: string, steps: string[]): Promise<CrackOpenResponse> {
+  return request<CrackOpenResponse>(`/notes/${id}/crack-open`, {
     method: "PATCH",
+    body: JSON.stringify({ steps }),
   });
 }
 
-export function peekNote(id: string): Promise<Note> {
-  return request<Note>(`/notes/${id}/peek`, { method: "PATCH" });
+// Mark the active step done and advance the loop (promote next / close).
+export function completeNote(id: string): Promise<CompleteResponse> {
+  return request<CompleteResponse>(`/notes/${id}/complete`, { method: "PATCH" });
 }
 
-export function keepNote(id: string): Promise<Note> {
-  return request<Note>(`/notes/${id}/keep`, { method: "PATCH" });
-}
-
-// Not routed through request<T> — DELETE returns 204 with no body, and
-// request<T> always calls res.json(), which would throw on an empty body.
-// Still goes through trackedFetch so the busy indicator covers erases.
-export async function dissolveNote(id: string): Promise<void> {
+// Not routed through request<T> — DELETE returns 204 with no body, which
+// request<T>'s res.json() would choke on. Still tracked for the busy
+// indicator.
+export async function deleteNote(id: string): Promise<void> {
   const res = await trackedFetch(`${API_BASE}/notes/${id}`, { method: "DELETE" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail ?? `${res.status} ${res.statusText}`);
   }
-}
-
-export function linkNotes(id: string, otherNoteId: string): Promise<Note> {
-  return request<Note>(`/notes/${id}/link`, {
-    method: "PATCH",
-    body: JSON.stringify({ other_note_id: otherNoteId }),
-  });
-}
-
-// Chat thread — see docs/DECISIONS.md ("Chat thread: schema and orchestration").
-
-export function listMessages(noteId: string): Promise<Message[]> {
-  return request<Message[]>(`/notes/${noteId}/messages`);
-}
-
-export function startThread(noteId: string): Promise<Message[]> {
-  return request<Message[]>(`/notes/${noteId}/thread/start`, { method: "POST" });
-}
-
-export function advanceThread(noteId: string): Promise<Message[]> {
-  return request<Message[]>(`/notes/${noteId}/thread/advance`, { method: "PATCH" });
-}
-
-export function sendThreadMessage(noteId: string, text: string): Promise<Message[]> {
-  return request<Message[]>(`/notes/${noteId}/messages`, {
-    method: "POST",
-    body: JSON.stringify({ text }),
-  });
-}
-
-export function manualFirstStep(noteId: string, text: string): Promise<Message[]> {
-  return request<Message[]>(`/notes/${noteId}/thread/manual-step`, {
-    method: "POST",
-    body: JSON.stringify({ text }),
-  });
-}
-
-export function dismissMessage(messageId: string): Promise<Message> {
-  return request<Message>(`/messages/${messageId}/dismiss`, { method: "PATCH" });
 }
