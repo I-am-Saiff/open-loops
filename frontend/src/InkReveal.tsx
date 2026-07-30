@@ -132,13 +132,13 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
     setProgress(1);
     setRevealed(true);
     haptic(24); // medium — legible
-    lockPager(false);
+    // The pager stays locked until the pointer actually lifts (onPointerUp),
+    // so trailing movement after a mid-rub finish can't be read as a swipe.
   }
 
   function stopWithoutReveal() {
     activeRef.current = false;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    lockPager(false);
     // progress is retained — a partial smudge never decays.
   }
 
@@ -147,7 +147,6 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
     setProgress(1);
     setStarted(true);
     setRevealed(true);
-    lockPager(false);
   }
 
   function onPointerDown(e: ReactPointerEvent) {
@@ -197,12 +196,14 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
       window.clearTimeout(armTimerRef.current);
       armTimerRef.current = undefined;
     }
-    if (revealed) return;
-    if (prefersReduced) {
-      revealInstantly();
-      return;
+    // Reduced motion: a tap reveals on release. Otherwise a release
+    // before full leaves a partial smudge.
+    if (!revealed) {
+      if (prefersReduced) revealInstantly();
+      else stopWithoutReveal();
     }
-    stopWithoutReveal();
+    // Always release the pager on lift, whatever happened above.
+    lockPager(false);
   }
 
   function onKeyDown(e: ReactKeyboardEvent) {
