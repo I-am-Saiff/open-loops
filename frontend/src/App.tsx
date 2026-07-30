@@ -33,6 +33,12 @@ export default function App() {
   const [dragDx, setDragDx] = useState(0);
   const [dragging, setDragging] = useState(false);
   const gestureRef = useRef<{ startX: number; startY: number; axis: "" | "x" | "y" } | null>(null);
+  // Set true while a step is being developed (InkReveal): a rub can move
+  // hundreds of px horizontally, which must never be read as a page swipe.
+  const developLockRef = useRef(false);
+  const lockPager = useCallback((locked: boolean) => {
+    developLockRef.current = locked;
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -82,14 +88,14 @@ export default function App() {
   // moves past AXIS_LOCK_PX, then commits to horizontal (page swipe) or
   // vertical (let the surface scroll, we bow out).
   function onPointerDown(e: ReactPointerEvent) {
-    if (designingId) return;
+    if (designingId || developLockRef.current) return;
     if (e.pointerType === "mouse") return; // mouse uses arrows / the marker
     gestureRef.current = { startX: e.clientX, startY: e.clientY, axis: "" };
   }
 
   function onPointerMove(e: ReactPointerEvent) {
     const g = gestureRef.current;
-    if (!g) return;
+    if (!g || developLockRef.current) return;
     const dx = e.clientX - g.startX;
     const dy = e.clientY - g.startY;
     if (g.axis === "") {
@@ -205,7 +211,12 @@ export default function App() {
             />
           </section>
           <section className="page" aria-hidden={page !== 1}>
-            <OpenLoops loops={openLoops} stepFor={stepFor} onComplete={handleComplete} />
+            <OpenLoops
+              loops={openLoops}
+              stepFor={stepFor}
+              onComplete={handleComplete}
+              lockPager={lockPager}
+            />
           </section>
           <section className="page" aria-hidden={page !== 2}>
             <ClosedLoops loops={closedLoops} />

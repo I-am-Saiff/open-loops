@@ -185,39 +185,103 @@
   color: var(--ink);
 }
 
-/* Crack-open affordance — the functional stand-in for the ink-develop
-   signature (tuned interaction lands in the polish phase). */
-.loop__crack {
+/* The signature: crack-open ink develop (DESIGN.md §6). All the app's
+   boldness lives here; everything around it stays quiet. */
+.reveal {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 44px; /* comfortable touch target */
   margin-top: var(--space-3);
   padding: 0;
   border: none;
   background: transparent;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+  /* We own the gesture on touch — no native scroll/zoom steals a develop. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Folded state: the closed ink loop-mark that unspools on press. */
+.reveal__mark {
+  position: absolute;
+  left: 0;
+  display: inline-flex;
   color: var(--ink-muted);
+  opacity: 1;
+  transition:
+    opacity var(--dur-base) var(--ease-standard),
+    transform var(--dur-base) var(--ease-develop);
 }
 
-.loop__live {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin-top: var(--space-2);
+.reveal--developing .reveal__mark {
+  opacity: 0;
+  transform: scale(0.6) rotate(-14deg); /* unspools out, quietly, once */
 }
 
-.loop__step {
-  margin: 0;
+/* The developing line — blur/opacity are driven inline from progress. */
+.reveal__line {
   font-family: var(--font-display);
   font-style: italic;
   font-size: 18px;
   line-height: 1.4;
-  color: var(--accent);
+  color: var(--accent); /* wet ink */
 }
 
-.loop__done {
+/* Revealed: the line dries from wet accent to settled ink; Done follows. */
+.reveal--revealed {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: 44px;
+  margin-top: var(--space-3);
+}
+
+.reveal__line--dry {
+  margin: 0;
+  animation: ink-dry var(--dur-settle) var(--ease-develop) both;
+}
+
+.reveal__done {
   flex: none;
+  animation: ink-done-in var(--dur-base) var(--ease-standard) 120ms both;
+}
+
+@keyframes ink-dry {
+  from {
+    color: var(--accent);
+    filter: blur(1.5px);
+  }
+  to {
+    color: var(--ink);
+    filter: blur(0);
+  }
+}
+
+@keyframes ink-done-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal__mark {
+    transition: none;
+  }
+  .reveal__line--dry {
+    animation: none;
+    color: var(--ink);
+  }
+  .reveal__done {
+    animation: none;
+  }
 }
 
 /* Closed loops — the quietest surface: a low-contrast record. */
