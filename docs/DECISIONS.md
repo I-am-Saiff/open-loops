@@ -1796,6 +1796,83 @@ scope is seen once and dismissed.
 as-is (schema reset aside). CORS allowlist, deploy config, health/uptime
 all unchanged.
 
+## 2026-07-30 — Phase 3 rebuild: the ink signature, recurrence, first-run, self-hosted fonts
+
+Professional rebuild, Phase 3 — build the signature real and bring the
+whole to a professional finish. Five live-tested commits.
+
+**The ink-develop signature (InkReveal.tsx).** A folded loop is a closed
+ink loop-mark; pressing it unspools the mark (a quiet one-time
+cross-fade) into the one live step as an undeveloped blurred smudge,
+which you develop into a sharp legible line. Blur eases OUT (fast early —
+the first effort visibly stirs the ink) while opacity eases IN
+(legibility lands only at the end) — verified at 50% effort: blur 1.75px,
+opacity 0.42. The line inks up in wet `--accent` and dries to `--ink`
+over `--dur-settle`; Done fades in 120ms after. Progress never decays (a
+partial smudge is retained between presses).
+- **Rub is applied immediately in pointermove**, not accrued in the rAF
+  loop. This keeps the primary desktop interaction crisp and, notably,
+  rAF-independent — it works even when rAF is throttled (a backgrounded
+  tab). The time-based hold (the alternative) still uses rAF.
+- **Touch:** press-and-hold under the thumb (≥44px target;
+  `touch-action: none` so native scroll can't steal a develop), rub as
+  optional acceleration. A **90ms arm delay** cancels a develop if the
+  pointer moves >10px first, so a fast page-swipe fling that grazes the
+  mark pages instead of developing. Once a hold commits, a
+  `developLockRef` on the pager blocks paging; **the lock releases on
+  pointer lift, not on reveal**, so trailing movement after a mid-rub
+  finish can't be read as a swipe.
+- **Haptic ramp** via `navigator.vibrate` — light tick (8) at start,
+  medium (24) at full. Android honors it; **iOS Safari has no web haptic
+  API and ignores it** — there is no reliable web workaround, so this is
+  a known platform limitation, not a bug.
+- **Accessibility:** the mark is a real "Reveal next step" button; the
+  step text is `aria-hidden` until revealed (fog of war holds for screen
+  readers), and Enter/Space (and reduced-motion tap) reveal that one step
+  instantly with no animation.
+
+**Recurrence.** `Note.recurrence` (none|daily|weekdays|weekly|monthly)
+and `Note.scheduled_for`. Set in Loop design's Repeats control, carried
+through crack-open. When a recurring top-level loop closes,
+`_regenerate_recurring` copies its step plan into a fresh instance (no AI
+re-run) scheduled for the next interval; the completed instance stays an
+immutable done row in Closed loops (shown with a `↻` marker). **The
+schedule is enforced at query time** — `list_notes` hides any loop and
+its steps whose `scheduled_for` is in the future — so there is no
+background worker; the instance simply surfaces once `now` catches up.
+Fog-of-war extended to time: next week's obligation is never shown early.
+Deferred: editing/ending a recurrence from a live loop (IA.md mentions
+reopening design) — not built; a recurrence is fixed at design time for
+now.
+
+**First-run guidance.** A new user lands on the empty home surface. Empty
+Open loops now guides ("Nothing open yet." + "Begin in Brain dump — the
+surface just to the left."), and a faint breathing "‹ Brain dump" cue
+sits at the left edge until the user navigates once, then fades and never
+returns (`localStorage` flag). The cue is gated on an empty home so it
+never overlaps content.
+
+**Fonts: self-hosted.** Chosen over Google Fonts for the public launch —
+no third-party dependency, no layout shift, works offline. Latin woff2
+subsets for the six used styles (Newsreader 400 / 400-italic / 500, IBM
+Plex Sans 400 / 500, IBM Plex Mono 500) were fetched from Google Fonts
+into `frontend/public/fonts/` and declared in `src/fonts.css`
+(`font-display: swap`); the two above-the-fold faces are `<link
+rel="preload">`ed. Verified zero gstatic/googleapis requests at runtime.
+Note: Newsreader and Plex Sans ship as variable files, so the 400/500
+files per family are byte-identical duplicates — a later optimization
+could point both weights at one file to shave ~170KB.
+
+**Regression check:** the three-surface nav, the Loop design step-proposer,
+all stage transitions, and the core state machine were re-exercised live
+and still work.
+
+**Kept as flagged in Phase 2 (still deferred, not this phase):** Open
+loops stays app-arranged (no free drag — matches IA.md); per-device data
+isolation and deployment are later. Schema changed again (recurrence
+columns) so production Postgres still needs a drop+recreate on next
+deploy.
+
 ## Open items / known incomplete for v1
 
 > **Superseded by the 2026-07-30 Phase 2 collapse:** every item below

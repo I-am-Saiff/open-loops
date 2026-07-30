@@ -243,7 +243,7 @@ export default function App() {
       {/* First-run cue: points a new user toward Brain dump (one surface
           left). Rendered only on the home surface until they navigate
           once, then it fades and never returns. */}
-      {firstRunRef.current && page === HOME_PAGE && (
+      {firstRunRef.current && page === HOME_PAGE && openLoops.length === 0 && (
         <button
           type="button"
           className={`firstrun-cue${hasNavigated ? " firstrun-cue--gone" : ""}`}
