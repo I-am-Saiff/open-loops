@@ -1873,6 +1873,81 @@ isolation and deployment are later. Schema changed again (recurrence
 columns) so production Postgres still needs a drop+recreate on next
 deploy.
 
+## 2026-07-30 — Phase 4: per-device isolation + production redeploy
+
+**Part A — anonymous per-device isolation.** For a public multi-user
+link with no auth, each device gets a private set of notes. The frontend
+generates a random `crypto.randomUUID` on first load (localStorage
+`ol.deviceId`) and sends it as `X-Device-Id` on every request. The
+backend adds a required, indexed `Note.device_id`; a `get_device_id`
+header dependency + a `_get_owned` helper gate every by-id path, and the
+list query filters by device. Cross-device access returns **404** (never
+revealing a note exists under another device, so ids can't be probed);
+a missing header **422**s. Children (crack-open) and regenerated
+recurring instances inherit the owner's device_id. Tradeoff, accepted for
+a validation launch: clearing browser data or switching devices loses
+that device's notes — no recovery, revisit if it becomes a real product.
+Verified locally and live that two devices see completely separate sets
+and no read/write path leaks across devices.
+
+**Part B — production redeploy (Vercel + Railway).** The live URL was
+still the old four-mechanic build.
+
+- **Key safety (unchanged rule):** re-confirmed before pushing —
+  `.env`/`.env.local` gitignored, only `.env.example` tracked, no
+  `GROQ_API_KEY` value anywhere in git history. The key lives only as a
+  Railway env var, server-side.
+- **Public repo:** pushed the 12 rebuild commits (Phases 0–4A) to
+  `I-am-Saiff/open-loops`.
+- **Database reset (drop + recreate, not in-place):** the prod Postgres
+  held the stale old schema (a `messages` table, dropped columns, 53
+  throwaway rows) which would break inserts. Ran `DROP SCHEMA public
+  CASCADE; CREATE SCHEMA public;` + grants via psycopg2 over Railway's
+  public TCP proxy (`DATABASE_PUBLIC_URL`), then `railway up` so the new
+  backend's `Base.metadata.create_all` rebuilt the schema from the
+  current models. Verified the fresh schema matches exactly: `notes`
+  only (no `messages`); columns `id, device_id (NOT NULL), parent_id,
+  text, x, y, status, kind, recurrence, scheduled_for, created_at`; enum
+  types `notekind/noterecurrence/notestatus`; 0 rows.
+- **Env vars confirmed:** backend (Railway) `GROQ_API_KEY`,
+  `DATABASE_URL` (internal reference), `ALLOWED_ORIGINS` (includes the
+  deployed Vercel origins; the custom `X-Device-Id` header rides the
+  existing `allow_headers=["*"]`); frontend (Vercel) `VITE_API_BASE_URL`
+  → the Railway backend. CORS preflight from the Vercel origin with
+  `x-device-id` returns 200.
+- **Deployed:** backend via `railway up`, frontend via `vercel --prod`
+  (aliased to https://open-loops-inky.vercel.app).
+
+**Live verification (on the deployed URL, not local):** cold-start
+first-run on desktop and a 375px mobile viewport (guided empty Open
+loops + Brain-dump cue); Brain dump → write → Make a loop → **Groq
+proposed 5 strict steps in production** → Open loop → folded mark in Open
+loops; crack-open develop verified with **desktop rub AND emulated touch
+(90ms arm + haptic ramp [8,24], dried to `--ink`)**; completing all steps
+closed the loop into Closed loops; a Daily recurrence closed to Closed
+with `↻ daily` and its next instance stayed hidden; two devices saw
+separate data with no leak; no console errors. Health monitor
+(`/health`) is green and already targets the live backend (its URL was
+unchanged).
+
+**Differences live vs local:** none functional — the deployed build
+behaves the same. (The rAF-throttled-hold caveat noted in Phase 3 is a
+headless-pane artifact, not a production issue.)
+
+**Flags / not done from here:**
+- **Real-phone test is the owner's to run.** The mobile path was
+  verified in a mobile viewport with emulated touch events on the live
+  URL; driving a physical phone is outside what this environment can do.
+  iOS haptics remain unavailable on web (Phase 3), so the ramp is silent
+  on iPhone.
+- **Railway plan:** the service is Online and responds in ~0.5s (Railway
+  does not auto-sleep; app-sleeping is off). Confirm the project is on
+  the Hobby plan (not trial credits) so it can't be suspended
+  mid-demo — billing state isn't inspectable from the CLI here.
+- **Test data in prod:** the notes created during live verification are
+  isolated to throwaway device ids and are invisible to any real
+  first-run user; left in place.
+
 ## Open items / known incomplete for v1
 
 > **Superseded by the 2026-07-30 Phase 2 collapse:** every item below
