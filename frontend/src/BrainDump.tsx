@@ -1,5 +1,8 @@
 import { useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type {
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import type { Note } from "./types";
 
 interface Props {
@@ -87,7 +90,7 @@ export function BrainDump({ notes, onAdd, onMakeLoop, onMove }: Props) {
     if (moved > TAP_MOVE_PX || Date.now() - t.t > TAP_MAX_MS) return; // a swipe/hold
     openDraft(e.clientX, e.clientY);
   }
-  function canvasDoubleClick(e: ReactPointerEvent) {
+  function canvasDoubleClick(e: ReactMouseEvent) {
     if (e.target !== canvasRef.current) return;
     openDraft(e.clientX, e.clientY);
   }
