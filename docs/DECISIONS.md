@@ -1997,6 +1997,49 @@ in the Phase 4 entry). Once the project is on Hobby, deploy is:
 Recurrence (Bug 3) needed no deploy — it was verified against the
 already-live build.
 
+## 2026-07-30 — Deployed the freeform Brain dump + drag persistence to production
+
+Railway back on a paid plan; deployed the pushed fixes and verified live.
+
+- **Backend** (`railway up`): clean deploy; confirmed the new
+  `PATCH /notes/{id}/position` endpoint is live (create → position PATCH
+  200 → persisted x/y round-tripped).
+- **Frontend** (`vercel --prod`): first attempt failed the production
+  build — `tsc -b` (stricter than the `--noEmit` check used during dev)
+  rejected `onDoubleClick={canvasDoubleClick}` typed as a
+  `ReactPointerEvent`; retyped it as `ReactMouseEvent` (only
+  target/clientX/clientY are read). Rebuilt clean and redeployed;
+  aliased to https://open-loops-inky.vercel.app.
+- **Confirmed the live URL serves the NEW build** (`.dump-canvas`
+  present, no `.dump__list`).
+
+**Live verification — all PASS (desktop + 375px mobile, fresh device,
+hard reload):**
+- Brain dump shows only raw lines; after making a loop, zero step
+  content appears there. Freeform: double-click (desktop) / tap empty
+  paper (touch) writes a note at that point; drag moves it and the
+  position **persists across reload** (via the live /position endpoint).
+  Dragging a note moves it while a swipe on empty paper changes surface —
+  no conflict, verified on touch too.
+- Loop design overlay shows the full proposed steps; Repeats control
+  (all 5 options) visible and usable, including on mobile.
+- Open loops: only the active step shows (fog of war, others hidden);
+  rub develops the faded step → Done → next → loop closes to Closed.
+- Closed loops: finished loops only, no step detail.
+- Recurrence: Daily set + closed → recorded in Closed (`↻ daily`), Open
+  loops empty; regeneration-at-interval proven earlier by backdating the
+  live schedule (same backend code, redeployed identically).
+- Cold-start first-run (fresh device): guided empty Open loops → Brain
+  dump cue → write → make loop → develop → close, no confusion.
+- Per-device isolation holds live (second device starts empty, no
+  cross-leak). Groq step proposal works in production. No console errors
+  on any surface. Uptime monitor green and pointing at the live backend
+  (fresh manual run: success).
+
+**Nothing broke live vs local** beyond the `tsc -b` type strictness
+(fixed). Minor cosmetic: a note dragged hard against the right edge
+wraps narrowly — freeform/user-placed, not a defect.
+
 ## Open items / known incomplete for v1
 
 > **Superseded by the 2026-07-30 Phase 2 collapse:** every item below
