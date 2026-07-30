@@ -4,6 +4,9 @@ export type NoteStatus = "folded" | "active" | "done";
 // steps. See docs/IA.md ("Brain dump" / "Loop design").
 export type NoteKind = "plain" | "loop";
 
+// Recurrence rule, set in Loop design. See docs/IA.md ("Recurrence").
+export type NoteRecurrence = "none" | "daily" | "weekdays" | "weekly" | "monthly";
+
 export interface Note {
   id: string;
   parent_id: string | null;
@@ -12,6 +15,7 @@ export interface Note {
   y: number;
   status: NoteStatus;
   kind: NoteKind;
+  recurrence: NoteRecurrence;
   created_at: string;
 }
 

@@ -5,7 +5,7 @@ import { BrainDump } from "./BrainDump";
 import { ClosedLoops } from "./ClosedLoops";
 import { LoopDesign } from "./LoopDesign";
 import { OpenLoops } from "./OpenLoops";
-import type { Note } from "./types";
+import type { Note, NoteRecurrence } from "./types";
 import "./App.css";
 
 const BUSY_INDICATOR_DELAY_MS = 300;
@@ -133,9 +133,9 @@ export default function App() {
   // Commit the Loop design overlay: the raw line becomes a loop and moves
   // to Open loops with its first step live. Scope collapses; we follow
   // the item to its new surface so the transition is legible.
-  async function handleOpenLoop(noteId: string, steps: string[]) {
+  async function handleOpenLoop(noteId: string, steps: string[], recurrence: NoteRecurrence) {
     try {
-      await crackOpen(noteId, steps);
+      await crackOpen(noteId, steps, recurrence);
       setDesigningId(null);
       await refresh();
       goTo(1);
@@ -227,7 +227,7 @@ export default function App() {
       {designing && (
         <LoopDesign
           note={designing}
-          onOpenLoop={(steps) => handleOpenLoop(designing.id, steps)}
+          onOpenLoop={(steps, recurrence) => handleOpenLoop(designing.id, steps, recurrence)}
           onClose={() => setDesigningId(null)}
           onError={setError}
         />

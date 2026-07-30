@@ -21,6 +21,8 @@ class NoteOut(BaseModel):
     status: str
     # 'plain' (a raw brain-dump line) or 'loop' (designed, has steps).
     kind: str
+    # 'none' | 'daily' | 'weekdays' | 'weekly' | 'monthly'.
+    recurrence: str
     created_at: datetime
 
 
@@ -33,6 +35,8 @@ class CrackOpenRequest(BaseModel):
     # Ordered step texts — list order decides which one becomes the
     # front-facing 'active' step first. See docs/DECISIONS.md.
     steps: List[str] = Field(min_length=1)
+    # Recurrence rule set in Loop design; defaults to a one-off loop.
+    recurrence: Literal["none", "daily", "weekdays", "weekly", "monthly"] = "none"
 
 
 class CrackOpenResponse(BaseModel):

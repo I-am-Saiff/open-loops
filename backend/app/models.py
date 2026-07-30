@@ -25,6 +25,18 @@ class NoteKind(str, enum.Enum):
     loop = "loop"
 
 
+# Recurrence is set in Loop design. When a recurring loop closes, a fresh
+# instance is scheduled for the next interval and regenerates straight
+# into Open loops then (see routes/notes.py). See docs/IA.md
+# ("Recurrence").
+class NoteRecurrence(str, enum.Enum):
+    none = "none"
+    daily = "daily"
+    weekdays = "weekdays"
+    weekly = "weekly"
+    monthly = "monthly"
+
+
 class Note(Base):
     __tablename__ = "notes"
 
@@ -45,6 +57,16 @@ class Note(Base):
         sa.Enum(NoteStatus), nullable=False, default=NoteStatus.folded
     )
     kind = sa.Column(sa.Enum(NoteKind), nullable=False, default=NoteKind.plain)
+    # Recurrence rule for a loop (set at crack-open). 'none' for one-off
+    # loops and all plain notes. See docs/IA.md ("Recurrence").
+    recurrence = sa.Column(
+        sa.Enum(NoteRecurrence), nullable=False, default=NoteRecurrence.none
+    )
+    # When a regenerated recurring instance becomes visible. NULL = visible
+    # now (every normal loop and plain note). A future value hides the note
+    # (and its children) from GET /notes until the interval arrives —
+    # fog-of-war extended to time.
+    scheduled_for = sa.Column(sa.DateTime, nullable=True)
     # datetime.utcnow(), not a DB-side default: sibling ordering relies on
     # created_at being distinct per row, and objects are constructed one
     # at a time in Python (even within a single crack-open transaction),

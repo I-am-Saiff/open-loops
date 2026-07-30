@@ -1,13 +1,21 @@
 import { useEffect, useState } from "react";
 import { decomposeNote } from "./api";
-import type { Note } from "./types";
+import type { Note, NoteRecurrence } from "./types";
 
 interface Props {
   note: Note;
-  onOpenLoop: (steps: string[]) => void;
+  onOpenLoop: (steps: string[], recurrence: NoteRecurrence) => void;
   onClose: () => void;
   onError: (message: string) => void;
 }
+
+const REPEAT_OPTIONS: { value: NoteRecurrence; label: string }[] = [
+  { value: "none", label: "Never" },
+  { value: "daily", label: "Daily" },
+  { value: "weekdays", label: "Weekdays" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+];
 
 // Loop design (IA.md §Stage 2): the one moment full scope is visible.
 // The strict step-proposer runs on open (and on demand); the list is
@@ -16,6 +24,7 @@ interface Props {
 export function LoopDesign({ note, onOpenLoop, onClose, onError }: Props) {
   const [steps, setSteps] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [repeats, setRepeats] = useState<NoteRecurrence>("none");
   // A skip proposal ("this is a single step") — shown as a plain note;
   // the list is pre-filled with the one action so Open loop still works.
   const [skipNote, setSkipNote] = useState<string | null>(null);
@@ -70,7 +79,7 @@ export function LoopDesign({ note, onOpenLoop, onClose, onError }: Props) {
       onError("Add at least one step, or suggest steps.");
       return;
     }
-    onOpenLoop(cleaned);
+    onOpenLoop(cleaned, repeats);
   }
 
   const hasStep = steps.some((s) => s.trim());
@@ -117,6 +126,24 @@ export function LoopDesign({ note, onOpenLoop, onClose, onError }: Props) {
           <button type="button" className="btn btn--text" onClick={suggest} disabled={loading}>
             {loading ? "Suggesting…" : "Suggest steps"}
           </button>
+        </div>
+
+        <div className="repeats">
+          <span className="repeats__label">Repeats</span>
+          <div className="repeats__options" role="radiogroup" aria-label="Repeats">
+            {REPEAT_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={repeats === opt.value}
+                className={`repeats__option${repeats === opt.value ? " repeats__option--on" : ""}`}
+                onClick={() => setRepeats(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="overlay__actions">

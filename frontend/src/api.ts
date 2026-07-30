@@ -3,6 +3,7 @@ import type {
   CrackOpenResponse,
   DecomposeProposal,
   Note,
+  NoteRecurrence,
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
@@ -80,11 +81,16 @@ export function decomposeNote(id: string): Promise<DecomposeProposal> {
 }
 
 // Commit the designed step list: the note becomes a loop and moves to
-// Open loops with its first step live.
-export function crackOpen(id: string, steps: string[]): Promise<CrackOpenResponse> {
+// Open loops with its first step live. An optional recurrence rule makes
+// it regenerate at its interval once closed.
+export function crackOpen(
+  id: string,
+  steps: string[],
+  recurrence: NoteRecurrence = "none"
+): Promise<CrackOpenResponse> {
   return request<CrackOpenResponse>(`/notes/${id}/crack-open`, {
     method: "PATCH",
-    body: JSON.stringify({ steps }),
+    body: JSON.stringify({ steps, recurrence }),
   });
 }
 

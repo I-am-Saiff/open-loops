@@ -424,6 +424,51 @@
   font-size: 16px;
 }
 
+/* Repeats control — set recurrence in Loop design. */
+.repeats {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.repeats__label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.repeats__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.repeats__option {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.repeats__option--on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.closed__recurs {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
 .overlay__actions {
   display: flex;
   justify-content: flex-end;

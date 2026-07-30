@@ -25,7 +25,15 @@ export function ClosedLoops({ loops }: Props) {
       <ul className="closed__list">
         {loops.map((loop) => (
           <li key={loop.id} className="closed__row">
-            <span className="closed__text">{loop.text}</span>
+            <span className="closed__text">
+              {loop.text}
+              {loop.recurrence !== "none" && (
+                <span className="closed__recurs" title={`Repeats ${loop.recurrence}`}>
+                  {" ↻ "}
+                  {loop.recurrence}
+                </span>
+              )}
+            </span>
             <span className="closed__date">{shortDate(loop.created_at)}</span>
           </li>
         ))}

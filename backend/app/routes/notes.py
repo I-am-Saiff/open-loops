@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 from uuid import UUID
 
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.llm_client import LLMError, complete_json
-from app.models import Note, NoteKind, NoteStatus
+from app.models import Note, NoteKind, NoteRecurrence, NoteStatus
 from app.schemas import (
     CompleteResponse,
     CrackOpenRequest,
@@ -33,6 +34,7 @@ def _to_out(note: Note) -> NoteOut:
         y=note.y,
         status=note.status.value,
         kind=note.kind.value,
+        recurrence=note.recurrence.value,
         created_at=note.created_at,
     )
 
@@ -95,7 +97,23 @@ def list_notes(db: Session = Depends(get_db)) -> List[NoteOut]:
         .order_by(Note.created_at.asc())
         .all()
     )
-    return [_to_out(n) for n in notes]
+
+    # Fog-of-war extended to time: a recurring loop's next instance is
+    # scheduled for a future interval and stays hidden — along with its
+    # steps — until then. The schedule is enforced here at query time (no
+    # background worker); the instance simply appears once now catches up.
+    now = datetime.utcnow()
+    future_loop_ids = {
+        n.id
+        for n in notes
+        if n.parent_id is None
+        and n.scheduled_for is not None
+        and n.scheduled_for > now
+    }
+    visible = [
+        n for n in notes if n.id not in future_loop_ids and n.parent_id not in future_loop_ids
+    ]
+    return [_to_out(n) for n in visible]
 
 
 DECOMPOSE_SYSTEM_PROMPT = """\
@@ -159,12 +177,18 @@ def decompose_note(note_id: UUID, db: Session = Depends(get_db)) -> DecomposePro
     return _run_decompose(db, note)
 
 
-def _crack_open(db: Session, note: Note, steps: List[str]) -> Tuple[Note, Note]:
+def _crack_open(
+    db: Session,
+    note: Note,
+    steps: List[str],
+    recurrence: NoteRecurrence = NoteRecurrence.none,
+) -> Tuple[Note, Note]:
     """Commit a designed step list: turn the note into a loop, insert its
     steps as folded children, and promote the first to 'active'. This is
     the sole path from plain line to loop. See docs/DECISIONS.md
     ("Creation status, and crack-open as its own endpoint")."""
     note.kind = NoteKind.loop
+    note.recurrence = recurrence
 
     # Constructed one at a time so created_at (Python-side, see
     # app/models.py) preserves the submitted step order.
@@ -208,7 +232,9 @@ def crack_open(
     if existing_child is not None:
         raise HTTPException(status_code=400, detail="note already cracked open")
 
-    note, active_child = _crack_open(db, note, payload.steps)
+    note, active_child = _crack_open(
+        db, note, payload.steps, NoteRecurrence(payload.recurrence)
+    )
     return CrackOpenResponse(parent=_to_out(note), active_child=_to_out(active_child))
 
 
@@ -245,6 +271,75 @@ def _promote_next_sibling_or_complete_parent(
     return None
 
 
+def _next_occurrence(now: datetime, recurrence: NoteRecurrence) -> datetime:
+    """When the next instance of a recurring loop should surface."""
+    if recurrence == NoteRecurrence.daily:
+        return now + timedelta(days=1)
+    if recurrence == NoteRecurrence.weekly:
+        return now + timedelta(weeks=1)
+    if recurrence == NoteRecurrence.weekdays:
+        # Next calendar day, skipping Sat/Sun (Mon=0 .. Sun=6).
+        nxt = now + timedelta(days=1)
+        while nxt.weekday() >= 5:
+            nxt += timedelta(days=1)
+        return nxt
+    if recurrence == NoteRecurrence.monthly:
+        month = now.month + 1
+        year = now.year + (month - 1) // 12
+        month = (month - 1) % 12 + 1
+        days_in_month = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
+        return now.replace(year=year, month=month, day=min(now.day, days_in_month))
+    return now  # 'none' shouldn't reach here
+
+
+def _regenerate_recurring(db: Session, loop: Note) -> None:
+    """A recurring top-level loop just closed. Schedule its next instance:
+    a fresh loop carrying the same title, recurrence, and step plan (copied
+    from the just-completed instance — no AI re-run), hidden until the next
+    interval. It skips Brain dump and Loop design entirely. See docs/IA.md.
+    """
+    step_texts = [
+        child.text
+        for child in (
+            db.query(Note)
+            .filter(Note.parent_id == loop.id)
+            .order_by(Note.created_at.asc())
+            .all()
+        )
+    ]
+    if not step_texts:
+        return
+
+    now = datetime.utcnow()
+    nxt = Note(
+        text=loop.text,
+        x=loop.x,
+        y=loop.y,
+        kind=NoteKind.loop,
+        recurrence=loop.recurrence,
+        status=NoteStatus.active,
+        scheduled_for=_next_occurrence(now, loop.recurrence),
+    )
+    db.add(nxt)
+    db.flush()  # assign nxt.id for the children's parent_id
+
+    children = [
+        Note(
+            kind=NoteKind.loop,
+            parent_id=nxt.id,
+            text=text,
+            x=loop.x,
+            y=loop.y,
+            status=NoteStatus.folded,
+        )
+        for text in step_texts
+    ]
+    for child in children:
+        db.add(child)
+    children[0].status = NoteStatus.active
+    db.flush()
+
+
 @router.patch("/{note_id}/complete", response_model=CompleteResponse)
 def complete_note(note_id: UUID, db: Session = Depends(get_db)) -> CompleteResponse:
     """Mark the active step done and advance the loop: promote the next
@@ -277,6 +372,15 @@ def complete_note(note_id: UUID, db: Session = Depends(get_db)) -> CompleteRespo
     if note.parent_id is not None:
         parent = db.get(Note, note.parent_id)
         promoted_sibling = _promote_next_sibling_or_complete_parent(db, parent)
+
+    # If a recurring top-level loop just closed, schedule its next instance.
+    if (
+        parent is not None
+        and parent.parent_id is None
+        and parent.status == NoteStatus.done
+        and parent.recurrence != NoteRecurrence.none
+    ):
+        _regenerate_recurring(db, parent)
 
     db.commit()
     db.refresh(note)
