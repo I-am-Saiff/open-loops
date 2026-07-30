@@ -8,7 +8,7 @@ import type { Note } from "./types";
 interface Props {
   // Only ever the raw plain top-level lines — never a loop or a loop's
   // steps. The caller guarantees this filter (App.tsx dumpLines). Brain
-  // dump shows nothing loop-related except the per-line "make a loop".
+  // dump shows nothing loop-related except the per-line "crack this open".
   notes: Note[];
   onAdd: (text: string, x: number, y: number) => void;
   onMakeLoop: (note: Note) => void;
@@ -42,6 +42,18 @@ export function BrainDump({ notes, onAdd, onMakeLoop, onMove }: Props) {
     return { x: clientX - r.left, y: clientY - r.top };
   }
 
+  // Keep a note fully on the paper — it can't be dragged off an edge or
+  // squeezed into an awkward wrap. Clamps left/top so the note's whole box
+  // stays inside the canvas.
+  function clamp(x: number, y: number, w: number, h: number): { x: number; y: number } {
+    const c = canvasRef.current;
+    if (!c) return { x, y };
+    return {
+      x: Math.min(Math.max(0, x), Math.max(0, c.clientWidth - w)),
+      y: Math.min(Math.max(0, y), Math.max(0, c.clientHeight - h)),
+    };
+  }
+
   // ---- dragging a note ----
   function startDrag(e: ReactPointerEvent, note: Note) {
     e.stopPropagation(); // never let the pager read this as a swipe
@@ -59,19 +71,20 @@ export function BrainDump({ notes, onAdd, onMakeLoop, onMove }: Props) {
     const d = dragRef.current;
     if (!d) return;
     e.stopPropagation();
+    const el = e.currentTarget as HTMLElement;
     const c = toCanvas(e.clientX, e.clientY);
-    setDragPos({ x: c.x - d.offX, y: c.y - d.offY });
+    setDragPos(clamp(c.x - d.offX, c.y - d.offY, el.offsetWidth, el.offsetHeight));
   }
   function endDrag(e: ReactPointerEvent) {
     const d = dragRef.current;
     if (!d) return;
     e.stopPropagation();
+    const el = e.currentTarget as HTMLElement;
     const c = toCanvas(e.clientX, e.clientY);
-    const x = c.x - d.offX;
-    const y = c.y - d.offY;
+    const p = clamp(c.x - d.offX, c.y - d.offY, el.offsetWidth, el.offsetHeight);
     dragRef.current = null;
     setDragId(null);
-    onMove(d.id, x, y);
+    onMove(d.id, p.x, p.y);
   }
 
   // ---- writing on empty paper ----
@@ -96,7 +109,10 @@ export function BrainDump({ notes, onAdd, onMakeLoop, onMove }: Props) {
   }
   function openDraft(clientX: number, clientY: number) {
     setDraftText("");
-    setDraft(toCanvas(clientX, clientY));
+    const c = toCanvas(clientX, clientY);
+    const canvas = canvasRef.current;
+    const noteW = canvas ? Math.min(220, canvas.clientWidth - 24) : 220;
+    setDraft(clamp(c.x, c.y, noteW, 56));
   }
   function commitDraft() {
     const text = draftText.trim();
@@ -135,11 +151,21 @@ export function BrainDump({ notes, onAdd, onMakeLoop, onMove }: Props) {
               <span className="dump-note__text">{note.text}</span>
               <button
                 type="button"
-                className="dump-note__loop"
+                className="dump-note__crack"
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => onMakeLoop(note)}
               >
-                make a loop
+                <span className="dump-note__crack-mark" aria-hidden="true">
+                  <svg width="22" height="16" viewBox="0 0 30 22" fill="none">
+                    <path
+                      d="M15 16.5c-4.2 0-6.5-2.2-6.5-5S11 6 14.5 6s6 2.2 6 4.8c0 3.2-3.4 5.4-8 5.4-3.1 0-5.5-1.1-5.5-1.1"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </span>
+                crack this open
               </button>
             </div>
           );

@@ -72,6 +72,10 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
   const [progress, setProgress] = useState(0);
   const [started, setStarted] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  // A quiet "rub to reveal" hint for first-timers — the folded mark alone
+  // doesn't say it's interactive. Shown only until the user develops their
+  // first step ever, then it stays out of the way forever.
+  const [showHint] = useState(() => localStorage.getItem("ol.developedOnce") !== "1");
 
   const progressRef = useRef(0);
   const activeRef = useRef(false);
@@ -131,6 +135,7 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
     progressRef.current = 1;
     setProgress(1);
     setRevealed(true);
+    markDevelopedOnce();
     haptic(24); // medium — legible
     // The pager stays locked until the pointer actually lifts (onPointerUp),
     // so trailing movement after a mid-rub finish can't be read as a swipe.
@@ -147,6 +152,11 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
     setProgress(1);
     setStarted(true);
     setRevealed(true);
+    markDevelopedOnce();
+  }
+
+  function markDevelopedOnce() {
+    localStorage.setItem("ol.developedOnce", "1");
   }
 
   function onPointerDown(e: ReactPointerEvent) {
@@ -251,6 +261,11 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
           />
         </svg>
       </span>
+      {showHint && (
+        <span className="reveal__hint" aria-hidden="true">
+          rub to reveal
+        </span>
+      )}
       <span
         className="reveal__line"
         style={{ filter: `blur(${blur}px)`, opacity: started ? opacity : 0 }}

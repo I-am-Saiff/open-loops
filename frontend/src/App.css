@@ -208,10 +208,12 @@
   pointer-events: none;
 }
 
-/* A raw line placed on the paper — absolutely positioned, draggable. */
+/* A raw line placed on the paper — absolutely positioned, draggable.
+   Fixed width so it never shrink-to-fit-wraps near an edge; clamped in
+   JS to stay fully on the paper. */
 .dump-note {
   position: absolute;
-  max-width: 240px;
+  width: 220px;
   touch-action: none; /* the note owns its pointer for dragging */
   user-select: none;
   -webkit-user-select: none;
@@ -231,37 +233,53 @@
   word-break: break-word;
 }
 
-/* The one loop-related affordance on Brain dump. Quiet but always
-   reachable (touch has no hover); brighter on hover/focus. */
-.dump-note__loop {
-  display: inline-block;
+/* The one loop-related affordance on Brain dump: an inviting "crack this
+   open" with the same loop-mark glyph a folded loop uses in Open loops,
+   so a line visibly becomes a loop. Always visible (touch has no hover),
+   quiet by default, inks up to the wet-ink accent on hover/focus. */
+.dump-note__crack {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin-top: var(--space-1);
   padding: 0;
   border: none;
   background: transparent;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1;
   color: var(--ink-muted);
-  opacity: 0.5;
-  transition: opacity var(--dur-fast) var(--ease-standard);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-standard);
 }
 
-.dump-note:hover .dump-note__loop,
-.dump-note__loop:focus-visible {
-  opacity: 1;
+.dump-note__crack-mark {
+  display: inline-flex;
+  color: currentColor;
+}
+
+.dump-note:hover .dump-note__crack,
+.dump-note__crack:focus-visible {
+  color: var(--accent);
 }
 
 .dump-note__input {
   position: absolute;
-  width: 240px;
+  width: 220px;
   padding: 0 0 2px;
   border: none;
   border-bottom: 1px solid var(--hairline);
   background: transparent;
   font: 16px/1.5 var(--font-ui);
   color: var(--ink);
+}
+
+/* Narrower notes on small screens, so freeform placement isn't cramped. */
+@media (max-width: 480px) {
+  .dump-note,
+  .dump-note__input {
+    width: 180px;
+  }
 }
 
 .dump-note__input::placeholder {
@@ -328,6 +346,23 @@
 .reveal--developing .reveal__mark {
   opacity: 0;
   transform: scale(0.6) rotate(-14deg); /* unspools out, quietly, once */
+}
+
+/* First-timer hint beside the folded mark — the mark alone doesn't say
+   it's interactive. Shown only until the first develop ever (gated in
+   InkReveal), and fades the instant developing begins. */
+.reveal__hint {
+  position: absolute;
+  left: 42px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--ink-muted);
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease-standard);
+}
+
+.reveal--developing .reveal__hint {
+  opacity: 0;
 }
 
 /* The developing line — blur/opacity are driven inline from progress. */
