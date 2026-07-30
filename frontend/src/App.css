@@ -1,20 +1,89 @@
 /* Phase 2 skeleton styles, built on the DESIGN.md tokens in index.css.
    Deliberately quiet: no shadows except on a live step, hairlines only
-   as dividers, whitespace over borders. This file grows as the three
-   surfaces come in; commit 1 covers only the reduced brain-dump list. */
+   as dividers, whitespace over borders, precise uniform radii. */
 
 .app {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
-.app__header {
-  padding: var(--space-5) var(--space-5) var(--space-4);
+/* Page marker — the only global chrome: three ink dots (DESIGN.md's
+   annotation register), current one filled. */
+.marker {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--space-8);
 }
 
-.app__title {
-  margin: 0;
+.marker__dot {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--hairline);
+  transition: background var(--dur-base) var(--ease-standard);
+}
+
+.marker__dot--current {
+  background: var(--ink);
+}
+
+.app__error {
+  flex: none;
+  margin: 0 var(--space-5) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  font-size: 13px;
+  font-style: italic;
+  color: var(--accent);
+  border-left: 2px solid var(--accent);
+  cursor: pointer;
+}
+
+/* Pager — three full-width surfaces on a sliding track. */
+.pager {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  touch-action: pan-y; /* let vertical scroll through; we own horizontal */
+}
+
+.pager__track {
+  display: flex;
+  height: 100%;
+  width: 300%;
+  transition: transform var(--dur-slow) var(--ease-standard);
+}
+
+.pager__track--dragging {
+  transition: none;
+}
+
+.page {
+  width: 33.3333%;
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.page::-webkit-scrollbar {
+  display: none;
+}
+
+.page__inner {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--space-2) var(--space-5) var(--space-9);
+}
+
+.page__title {
+  margin: 0 0 var(--space-5);
   font-family: var(--font-display);
   font-weight: 400;
   font-size: 28px;
@@ -23,32 +92,15 @@
   color: var(--ink);
 }
 
-.app__error {
-  margin: 0 var(--space-5) var(--space-4);
-  padding: var(--space-2) var(--space-3);
-  font-size: 13px;
-  color: var(--accent);
-  border-left: 2px solid var(--accent);
-  cursor: pointer;
-}
-
-.surface {
-  flex: 1;
-  width: 100%;
-  max-width: 640px;
-  margin: 0 auto;
-  padding: var(--space-4) var(--space-5) var(--space-8);
-}
-
-.surface__empty {
+.page__empty {
   margin: var(--space-7) 0;
   font-family: var(--font-display);
   font-size: 20px;
+  line-height: 1.4;
   color: var(--ink-muted);
-  text-align: center;
 }
 
-/* Brain dump — a flat, unstructured list of raw lines. */
+/* Brain dump — a flat list of raw lines. */
 .dump__list {
   list-style: none;
   margin: 0;
@@ -56,21 +108,49 @@
 }
 
 .dump__line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
   padding: var(--space-3) 0;
   border-bottom: 1px solid var(--hairline);
+}
+
+.dump__text {
   font-size: 16px;
   line-height: 1.55;
   color: var(--ink);
 }
 
+/* The one quiet per-line affordance — hidden until hover/focus. */
+.dump__make-loop {
+  flex: none;
+  padding: 2px var(--space-2);
+  border: none;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+
+.dump__line:hover .dump__make-loop,
+.dump__make-loop:focus-visible {
+  opacity: 1;
+}
+
 .dump__compose {
-  margin-top: var(--space-4);
+  margin-top: var(--space-2);
 }
 
 .dump__input {
   width: 100%;
   padding: var(--space-3) 0;
   border: none;
+  border-bottom: 1px solid transparent;
   background: transparent;
   font: 16px/1.55 var(--font-ui);
   color: var(--ink);
@@ -78,6 +158,149 @@
 
 .dump__input::placeholder {
   color: var(--ink-muted);
+}
+
+/* Open loops — a calm field of loop marks. (App-arranged for now; user
+   placement is deferred — it conflicts with horizontal swipe on touch.
+   See docs/DECISIONS.md, Phase 2.) */
+.loops {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.loop {
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-live);
+}
+
+.loop__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 20px;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.loop__step {
+  margin: var(--space-2) 0 0;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 18px;
+  line-height: 1.4;
+  color: var(--accent);
+}
+
+/* Closed loops — the quietest surface: a low-contrast record. */
+.closed__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.closed__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.closed__text {
+  font-size: 15px;
+  color: var(--ink-muted);
+}
+
+.closed__date {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-muted);
+}
+
+/* Loop design overlay. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  z-index: 10;
+}
+
+.overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(23, 23, 26, 0.28);
+}
+
+.overlay__panel {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  padding: var(--space-6);
+  background: var(--surface);
+  border-radius: var(--radius-modal);
+  box-shadow: var(--shadow-live);
+}
+
+.overlay__eyebrow {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.overlay__title {
+  margin: 0 0 var(--space-5);
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+}
+
+.overlay__steps {
+  min-height: var(--space-6);
+}
+
+.overlay__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+/* Buttons — the instrument voice. */
+.btn {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius-control);
+  background: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--paper);
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn--quiet {
+  background: transparent;
+  border-color: var(--hairline);
+  color: var(--ink);
 }
 
 /* The "working" indicator — a quiet pill, bottom-center. */
@@ -133,5 +356,8 @@
 @media (prefers-reduced-motion: reduce) {
   .busy__dots i {
     animation: none;
+  }
+  .pager__track {
+    transition: none;
   }
 }

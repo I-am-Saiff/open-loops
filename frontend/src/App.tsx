@@ -1,22 +1,38 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { createNote, listNotes, subscribeBusy } from "./api";
+import { BrainDump } from "./BrainDump";
+import { ClosedLoops } from "./ClosedLoops";
+import { LoopDesign } from "./LoopDesign";
+import { OpenLoops } from "./OpenLoops";
 import type { Note } from "./types";
 import "./App.css";
 
-// Surface the "working" indicator only if a request stays in flight past
-// this — a warm request returns well under it, so fast actions stay
-// silent. See docs/DECISIONS.md ("Loading indicator").
 const BUSY_INDICATOR_DELAY_MS = 300;
 
-// NOTE (Phase 2, commit 1): this is the reduced post-removal state — the
-// dice/fade/companion mechanics and their canvas are gone. The three
-// paged surfaces (Brain dump / Open loops / Closed loops) and the Loop
-// design overlay are stood up in the next commit. See docs/IA.md.
+// The three surfaces, in flow order. Open loops is home (index 1): Brain
+// dump one swipe left, Closed loops one swipe right. See docs/IA.md
+// ("Screens vs. states").
+const PAGES = ["Brain dump", "Open loops", "Closed loops"];
+const HOME_PAGE = 1;
+
+// Horizontal travel (px) past which a swipe commits to the next page,
+// and the movement needed before we lock the gesture to an axis (so a
+// vertical scroll inside a surface is never hijacked as a page swipe).
+const SWIPE_COMMIT_PX = 60;
+const AXIS_LOCK_PX = 10;
+
 export default function App() {
   const [notes, setNotes] = useState<Note[]>([]);
-  const [draft, setDraft] = useState("");
+  const [page, setPage] = useState(HOME_PAGE);
+  const [designingId, setDesigningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showBusy, setShowBusy] = useState(false);
+
+  // Live horizontal drag offset while swiping between pages.
+  const [dragDx, setDragDx] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const gestureRef = useRef<{ startX: number; startY: number; axis: "" | "x" | "y" } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -43,10 +59,63 @@ export default function App() {
     };
   }, []);
 
-  async function handleAdd() {
-    const text = draft.trim();
-    if (!text) return;
-    setDraft("");
+  const goTo = useCallback((next: number) => {
+    setPage(Math.max(0, Math.min(PAGES.length - 1, next)));
+  }, []);
+
+  // Desktop: arrow keys move between surfaces — but only when the overlay
+  // is closed and focus isn't in a text field (so arrows still move the
+  // caret while writing).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (designingId) return;
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
+      if (e.key === "ArrowRight") goTo(page + 1);
+      else if (e.key === "ArrowLeft") goTo(page - 1);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [page, designingId, goTo]);
+
+  // Touch/drag paging with an axis lock. Undecided until the pointer
+  // moves past AXIS_LOCK_PX, then commits to horizontal (page swipe) or
+  // vertical (let the surface scroll, we bow out).
+  function onPointerDown(e: ReactPointerEvent) {
+    if (designingId) return;
+    if (e.pointerType === "mouse") return; // mouse uses arrows / the marker
+    gestureRef.current = { startX: e.clientX, startY: e.clientY, axis: "" };
+  }
+
+  function onPointerMove(e: ReactPointerEvent) {
+    const g = gestureRef.current;
+    if (!g) return;
+    const dx = e.clientX - g.startX;
+    const dy = e.clientY - g.startY;
+    if (g.axis === "") {
+      if (Math.abs(dx) < AXIS_LOCK_PX && Math.abs(dy) < AXIS_LOCK_PX) return;
+      g.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      if (g.axis === "x") setDragging(true);
+    }
+    if (g.axis === "x") {
+      // Resist dragging past the first/last surface.
+      const atEdge = (page === 0 && dx > 0) || (page === PAGES.length - 1 && dx < 0);
+      setDragDx(atEdge ? dx / 3 : dx);
+    }
+  }
+
+  function endGesture() {
+    const g = gestureRef.current;
+    gestureRef.current = null;
+    if (g?.axis === "x") {
+      if (dragDx <= -SWIPE_COMMIT_PX) goTo(page + 1);
+      else if (dragDx >= SWIPE_COMMIT_PX) goTo(page - 1);
+    }
+    setDragging(false);
+    setDragDx(0);
+  }
+
+  async function handleAdd(text: string) {
     try {
       await createNote({ text });
       await refresh();
@@ -55,13 +124,36 @@ export default function App() {
     }
   }
 
-  const lines = notes.filter((n) => n.parent_id === null);
+  const dumpLines = notes.filter((n) => n.parent_id === null && n.kind === "plain");
+  const openLoops = notes.filter(
+    (n) => n.parent_id === null && n.kind === "loop" && n.status !== "done"
+  );
+  const closedLoops = notes.filter(
+    (n) => n.parent_id === null && n.kind === "loop" && n.status === "done"
+  );
+  const stepFor = (loopId: string) =>
+    notes.find((n) => n.parent_id === loopId && n.status === "active");
+
+  const designing = designingId ? notes.find((n) => n.id === designingId) ?? null : null;
+
+  const trackStyle = {
+    transform: `translateX(calc(${-page * (100 / PAGES.length)}% + ${dragDx}px))`,
+  };
 
   return (
     <div className="app">
-      <header className="app__header">
-        <h1 className="app__title">Open Loops</h1>
-      </header>
+      <nav className="marker" aria-label="Surfaces">
+        {PAGES.map((label, i) => (
+          <button
+            key={label}
+            type="button"
+            className={`marker__dot${i === page ? " marker__dot--current" : ""}`}
+            aria-label={label}
+            aria-current={i === page}
+            onClick={() => goTo(i)}
+          />
+        ))}
+      </nav>
 
       {error && (
         <div className="app__error" onClick={() => setError(null)}>
@@ -69,29 +161,34 @@ export default function App() {
         </div>
       )}
 
-      <main className="surface">
-        <ul className="dump__list">
-          {lines.map((n) => (
-            <li key={n.id} className="dump__line">
-              {n.text}
-            </li>
-          ))}
-        </ul>
-
-        {lines.length === 0 && <p className="surface__empty">Empty page. Write what's on your mind.</p>}
-
-        <div className="dump__compose">
-          <input
-            className="dump__input"
-            value={draft}
-            placeholder="Write a line"
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleAdd();
-            }}
-          />
+      <div
+        className="pager"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endGesture}
+        onPointerCancel={endGesture}
+      >
+        <div
+          className={`pager__track${dragging ? " pager__track--dragging" : ""}`}
+          style={trackStyle}
+        >
+          <section className="page" aria-hidden={page !== 0}>
+            <BrainDump
+              lines={dumpLines}
+              onAdd={handleAdd}
+              onMakeLoop={(n) => setDesigningId(n.id)}
+            />
+          </section>
+          <section className="page" aria-hidden={page !== 1}>
+            <OpenLoops loops={openLoops} stepFor={stepFor} />
+          </section>
+          <section className="page" aria-hidden={page !== 2}>
+            <ClosedLoops loops={closedLoops} />
+          </section>
         </div>
-      </main>
+      </div>
+
+      {designing && <LoopDesign note={designing} onClose={() => setDesigningId(null)} />}
 
       {showBusy && (
         <div className="busy" role="status" aria-live="polite">
