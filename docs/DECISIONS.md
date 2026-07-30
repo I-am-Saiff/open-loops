@@ -1948,6 +1948,55 @@ headless-pane artifact, not a production issue.)
   isolated to throwaway device ids and are invisible to any real
   first-run user; left in place.
 
+## 2026-07-30 — Three live-build fixes; deploy blocked by expired Railway trial
+
+**Bug 1 — Brain dump must never show sub-steps.** Investigated: the
+existing filter (`parent_id === null && kind === "plain"`) already
+excludes loops and their steps, and the then-live build did not leak
+(verified: after making a loop, Brain dump was empty and the loop's
+folded step lived only in Open loops). The likely cause of what the
+client saw was a stale bundle. Hardened regardless: the rebuilt Brain
+dump takes an already-filtered `notes` prop and never derives children.
+
+**Bug 2 — Brain dump is now a freeform draggable surface, not a list.**
+Write anywhere (double-click on desktop; tap empty paper on touch — a
+tap is distinguished from a swipe by movement/time), notes are
+absolutely positioned and draggable on desktop and touch, and x/y is
+persisted via a new device-scoped `PATCH /notes/{id}/position`. A note's
+pointerdown stops propagation so dragging a note never reaches the
+pager; a swipe on empty paper still changes surface — verified the two
+don't conflict. A failed position save degrades to a console warning
+(the note already moved locally), never the full error bar.
+- Also hardened the pager swipe itself: the commit decision now reads
+  the drag offset from a **ref** instead of React state, so it is
+  synchronous and no longer depends on a re-render landing before
+  pointerup — this makes the real touch swipe reliable, not just the
+  marker/arrow paths.
+
+**Bug 3 — recurrence verified end-to-end on the live mobile build**
+(this was already correct; re-verified per request). On live at 375px:
+the Repeats control (Never/Daily/Weekdays/Weekly/Monthly) renders inside
+the overlay and wraps to two rows, all options usable. Setting Daily and
+closing the loop recorded the completed instance in Closed (`↻ daily`)
+and left Open loops empty (next instance hidden). Backdating the live
+instance's `scheduled_for` (simulating the interval arriving) surfaced it
+in Open loops as a folded mark with only its first step active and the
+rest hidden — regenerated from the stored step plan with no AI re-run.
+
+**Deploy status — BLOCKED.** Bugs 1 & 2 are implemented, committed, and
+pushed, and verified locally, but **could not be deployed to production:
+the Railway trial has expired**, so `railway up` refuses ("Your trial
+has expired. Please select a plan to continue"). The live backend is
+still Online on the old deploy (health 200) but lacks the new
+`/position` endpoint, so shipping the new frontend against it would 404
+on drag-persist — deliberately NOT deployed to avoid a broken live
+state. Selecting/paying for a Railway plan is a purchase and is left to
+the owner (this is the exact "confirm the Railway plan" follow-up flagged
+in the Phase 4 entry). Once the project is on Hobby, deploy is:
+`cd backend && railway up` then `cd frontend && vercel --prod`.
+Recurrence (Bug 3) needed no deploy — it was verified against the
+already-live build.
+
 ## Open items / known incomplete for v1
 
 > **Superseded by the 2026-07-30 Phase 2 collapse:** every item below
