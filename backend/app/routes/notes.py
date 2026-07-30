@@ -20,6 +20,7 @@ from app.schemas import (
     NoteCreate,
     NoteOut,
     NoteUpdate,
+    PositionUpdate,
 )
 
 router = APIRouter(prefix="/notes", tags=["notes"])
@@ -99,6 +100,23 @@ def update_note(
     note = _get_owned(db, note_id, device_id)
 
     note.text = payload.text
+    db.commit()
+    db.refresh(note)
+
+    return _to_out(note)
+
+
+@router.patch("/{note_id}/position", response_model=NoteOut)
+def update_position(
+    note_id: UUID,
+    payload: PositionUpdate,
+    db: Session = Depends(get_db),
+    device_id: str = Depends(get_device_id),
+) -> NoteOut:
+    """Persist a Brain dump line's freeform position after a drag."""
+    note = _get_owned(db, note_id, device_id)
+    note.x = payload.x
+    note.y = payload.y
     db.commit()
     db.refresh(note)
 

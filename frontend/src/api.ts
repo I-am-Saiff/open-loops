@@ -94,6 +94,14 @@ export function updateNoteText(id: string, text: string): Promise<Note> {
   });
 }
 
+// Persist a Brain dump line's freeform position after a drag.
+export function updatePosition(id: string, x: number, y: number): Promise<Note> {
+  return request<Note>(`/notes/${id}/position`, {
+    method: "PATCH",
+    body: JSON.stringify({ x, y }),
+  });
+}
+
 // Loop design's AI touchpoint: propose steps (or a skip). Side-effect
 // free — nothing is created until crack-open commits the edited list.
 export function decomposeNote(id: string): Promise<DecomposeProposal> {

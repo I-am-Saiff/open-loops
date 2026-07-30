@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { completeNote, crackOpen, createNote, listNotes, subscribeBusy } from "./api";
+import {
+  completeNote,
+  crackOpen,
+  createNote,
+  listNotes,
+  subscribeBusy,
+  updatePosition,
+} from "./api";
 import { BrainDump } from "./BrainDump";
 import { ClosedLoops } from "./ClosedLoops";
 import { LoopDesign } from "./LoopDesign";
@@ -41,6 +48,9 @@ export default function App() {
   );
   const firstRunRef = useRef(localStorage.getItem("ol.navigated") !== "1");
   const gestureRef = useRef<{ startX: number; startY: number; axis: "" | "x" | "y" } | null>(null);
+  // Mirror of dragDx in a ref, so the swipe-commit decision at pointerup is
+  // synchronous and never depends on a state re-render landing first.
+  const dragDxRef = useRef(0);
   // Set true while a step is being developed (InkReveal): a rub can move
   // hundreds of px horizontally, which must never be read as a page swipe.
   const developLockRef = useRef(false);
@@ -122,25 +132,41 @@ export default function App() {
     if (g.axis === "x") {
       // Resist dragging past the first/last surface.
       const atEdge = (page === 0 && dx > 0) || (page === PAGES.length - 1 && dx < 0);
-      setDragDx(atEdge ? dx / 3 : dx);
+      const val = atEdge ? dx / 3 : dx;
+      dragDxRef.current = val;
+      setDragDx(val);
     }
   }
 
   function endGesture() {
     const g = gestureRef.current;
     gestureRef.current = null;
+    const dx = dragDxRef.current;
+    dragDxRef.current = 0;
     if (g?.axis === "x") {
-      if (dragDx <= -SWIPE_COMMIT_PX) goTo(page + 1);
-      else if (dragDx >= SWIPE_COMMIT_PX) goTo(page - 1);
+      if (dx <= -SWIPE_COMMIT_PX) goTo(page + 1);
+      else if (dx >= SWIPE_COMMIT_PX) goTo(page - 1);
     }
     setDragging(false);
     setDragDx(0);
   }
 
-  async function handleAdd(text: string) {
+  async function handleAdd(text: string, x: number, y: number) {
     try {
-      await createNote({ text });
+      await createNote({ text, x, y });
       await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  // Persist a Brain dump line's new position after a drag. Optimistic:
+  // update local state immediately so the note doesn't snap back, then
+  // save.
+  async function handleMove(id: string, x: number, y: number) {
+    setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y } : n)));
+    try {
+      await updatePosition(id, x, y);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -221,9 +247,10 @@ export default function App() {
         >
           <section className="page" aria-hidden={page !== 0}>
             <BrainDump
-              lines={dumpLines}
+              notes={dumpLines}
               onAdd={handleAdd}
               onMakeLoop={(n) => setDesigningId(n.id)}
+              onMove={handleMove}
             />
           </section>
           <section className="page" aria-hidden={page !== 1}>

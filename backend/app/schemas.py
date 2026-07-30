@@ -31,6 +31,13 @@ class NoteUpdate(BaseModel):
     text: str = Field(min_length=1)
 
 
+# Brain dump is a freeform surface: a raw line is placed and dragged
+# anywhere, and its position persists. See docs/IA.md ("Brain dump").
+class PositionUpdate(BaseModel):
+    x: float
+    y: float
+
+
 class CrackOpenRequest(BaseModel):
     # Ordered step texts — list order decides which one becomes the
     # front-facing 'active' step first. See docs/DECISIONS.md.
