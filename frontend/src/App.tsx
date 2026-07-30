@@ -32,6 +32,14 @@ export default function App() {
   // Live horizontal drag offset while swiping between pages.
   const [dragDx, setDragDx] = useState(0);
   const [dragging, setDragging] = useState(false);
+  // First-run guidance: a new user lands on the empty home surface with
+  // no reason to know the other surfaces are a swipe away. We show a
+  // directional cue toward Brain dump until they navigate once, then
+  // remember that forever. See docs/IA.md ("First-run").
+  const [hasNavigated, setHasNavigated] = useState(
+    () => localStorage.getItem("ol.navigated") === "1"
+  );
+  const firstRunRef = useRef(localStorage.getItem("ol.navigated") !== "1");
   const gestureRef = useRef<{ startX: number; startY: number; axis: "" | "x" | "y" } | null>(null);
   // Set true while a step is being developed (InkReveal): a rub can move
   // hundreds of px horizontally, which must never be read as a page swipe.
@@ -65,9 +73,17 @@ export default function App() {
     };
   }, []);
 
-  const goTo = useCallback((next: number) => {
-    setPage(Math.max(0, Math.min(PAGES.length - 1, next)));
-  }, []);
+  const goTo = useCallback(
+    (next: number) => {
+      const clamped = Math.max(0, Math.min(PAGES.length - 1, next));
+      setPage(clamped);
+      if (clamped !== page && !hasNavigated) {
+        setHasNavigated(true);
+        localStorage.setItem("ol.navigated", "1");
+      }
+    },
+    [page, hasNavigated]
+  );
 
   // Desktop: arrow keys move between surfaces — but only when the overlay
   // is closed and focus isn't in a text field (so arrows still move the
@@ -223,6 +239,22 @@ export default function App() {
           </section>
         </div>
       </div>
+
+      {/* First-run cue: points a new user toward Brain dump (one surface
+          left). Rendered only on the home surface until they navigate
+          once, then it fades and never returns. */}
+      {firstRunRef.current && page === HOME_PAGE && (
+        <button
+          type="button"
+          className={`firstrun-cue${hasNavigated ? " firstrun-cue--gone" : ""}`}
+          onClick={() => goTo(0)}
+        >
+          <span className="firstrun-cue__chevron" aria-hidden="true">
+            ‹
+          </span>
+          <span className="firstrun-cue__label">Brain dump</span>
+        </button>
+      )}
 
       {designing && (
         <LoopDesign

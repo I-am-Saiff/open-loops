@@ -19,7 +19,10 @@ export function OpenLoops({ loops, stepFor, onComplete, lockPager }: Props) {
       <h2 className="page__title">Open loops</h2>
 
       {loops.length === 0 && (
-        <p className="page__empty">Nothing open. Turn a brain-dump line into a loop.</p>
+        <div className="page__empty">
+          <p className="page__empty-line">Nothing open yet.</p>
+          <p className="page__empty-sub">Begin in Brain dump — the surface just to the left.</p>
+        </div>
       )}
 
       <div className="loops">

@@ -100,6 +100,80 @@
   color: var(--ink-muted);
 }
 
+.page__empty-line {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 20px;
+  line-height: 1.4;
+  color: var(--ink-muted);
+}
+
+.page__empty-sub {
+  margin: var(--space-2) 0 0;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+
+/* First-run cue — points a new user toward Brain dump, one surface left.
+   Quiet: a faint breathing chevron that fades once they've navigated. */
+.firstrun-cue {
+  position: fixed;
+  left: var(--space-2);
+  top: 58%;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--ink-muted);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  opacity: 0;
+  animation: cue-in var(--dur-slow) var(--ease-standard) 500ms forwards;
+}
+
+.firstrun-cue__chevron {
+  font-size: 22px;
+  line-height: 1;
+  animation: cue-breathe 2.4s var(--ease-standard) infinite;
+}
+
+.firstrun-cue--gone {
+  animation: none;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease-standard);
+}
+
+@keyframes cue-in {
+  to {
+    opacity: 0.75;
+  }
+}
+
+@keyframes cue-breathe {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .firstrun-cue {
+    animation: none;
+    opacity: 0.75;
+  }
+  .firstrun-cue__chevron {
+    animation: none;
+  }
+}
+
 /* Brain dump — a flat list of raw lines. */
 .dump__list {
   list-style: none;
