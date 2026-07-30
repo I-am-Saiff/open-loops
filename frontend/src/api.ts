@@ -8,6 +8,26 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
+// Anonymous per-device identity. Generated silently on first load and
+// kept in localStorage; sent on every request so the backend scopes this
+// device's notes to itself. No auth, no UI — two people on two devices
+// get separate private sets automatically. Clearing browser data or
+// switching devices loses the notes (accepted for a validation launch —
+// see docs/DECISIONS.md, "Per-device isolation").
+const DEVICE_ID_KEY = "ol.deviceId";
+
+function deviceId(): string {
+  let id = localStorage.getItem(DEVICE_ID_KEY);
+  if (!id) {
+    id =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `dev-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(DEVICE_ID_KEY, id);
+  }
+  return id;
+}
+
 // Global in-flight tracker. Every network call routes through the fetch
 // wrapper below, so subscribing here catches all of them with no
 // per-handler wiring — used to show a subtle "working" indicator so a
@@ -46,8 +66,8 @@ async function trackedFetch(input: string, init?: RequestInit): Promise<Response
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await trackedFetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    headers: { "Content-Type": "application/json", "X-Device-Id": deviceId(), ...init?.headers },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -103,7 +123,10 @@ export function completeNote(id: string): Promise<CompleteResponse> {
 // request<T>'s res.json() would choke on. Still tracked for the busy
 // indicator.
 export async function deleteNote(id: string): Promise<void> {
-  const res = await trackedFetch(`${API_BASE}/notes/${id}`, { method: "DELETE" });
+  const res = await trackedFetch(`${API_BASE}/notes/${id}`, {
+    method: "DELETE",
+    headers: { "X-Device-Id": deviceId() },
+  });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail ?? `${res.status} ${res.statusText}`);

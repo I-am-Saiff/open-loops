@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import ValidationError
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -25,6 +25,26 @@ from app.schemas import (
 router = APIRouter(prefix="/notes", tags=["notes"])
 
 
+def get_device_id(x_device_id: str = Header(...)) -> str:
+    """The anonymous per-device owner id, sent on every request. Required —
+    the frontend always generates and sends one; a missing header is a
+    client bug, not a valid anonymous request. See docs/DECISIONS.md
+    ("Per-device isolation")."""
+    if not x_device_id.strip():
+        raise HTTPException(status_code=400, detail="missing device id")
+    return x_device_id
+
+
+def _get_owned(db: Session, note_id: UUID, device_id: str) -> Note:
+    """Fetch a note only if it belongs to this device. Returns 404 for both
+    a missing note and one owned by another device — never reveal that a
+    note exists under a different device, so ids can't be probed."""
+    note = db.get(Note, str(note_id))
+    if note is None or note.device_id != device_id:
+        raise HTTPException(status_code=404, detail="note not found")
+    return note
+
+
 def _to_out(note: Note) -> NoteOut:
     return NoteOut(
         id=note.id,
@@ -40,15 +60,21 @@ def _to_out(note: Note) -> NoteOut:
 
 
 @router.post("", response_model=NoteOut, status_code=201)
-def create_note(payload: NoteCreate, db: Session = Depends(get_db)) -> NoteOut:
+def create_note(
+    payload: NoteCreate,
+    db: Session = Depends(get_db),
+    device_id: str = Depends(get_device_id),
+) -> NoteOut:
     parent_id = str(payload.parent_id) if payload.parent_id is not None else None
 
-    if parent_id is not None and db.get(Note, parent_id) is None:
-        raise HTTPException(status_code=404, detail="parent note not found")
+    # A child can only be attached to a parent this device owns.
+    if parent_id is not None:
+        _get_owned(db, payload.parent_id, device_id)
 
     # A new top-level note is a raw brain-dump line: 'plain' and 'folded'.
     # It only becomes a loop when designed (crack-open). See docs/IA.md.
     note = Note(
+        device_id=device_id,
         parent_id=parent_id,
         text=payload.text,
         x=payload.x,
@@ -64,12 +90,13 @@ def create_note(payload: NoteCreate, db: Session = Depends(get_db)) -> NoteOut:
 
 @router.patch("/{note_id}", response_model=NoteOut)
 def update_note(
-    note_id: UUID, payload: NoteUpdate, db: Session = Depends(get_db)
+    note_id: UUID,
+    payload: NoteUpdate,
+    db: Session = Depends(get_db),
+    device_id: str = Depends(get_device_id),
 ) -> NoteOut:
     """Notebook first: a raw brain-dump line stays editable in place."""
-    note = db.get(Note, str(note_id))
-    if note is None:
-        raise HTTPException(status_code=404, detail="note not found")
+    note = _get_owned(db, note_id, device_id)
 
     note.text = payload.text
     db.commit()
@@ -79,7 +106,9 @@ def update_note(
 
 
 @router.get("", response_model=List[NoteOut])
-def list_notes(db: Session = Depends(get_db)) -> List[NoteOut]:
+def list_notes(
+    db: Session = Depends(get_db), device_id: str = Depends(get_device_id)
+) -> List[NoteOut]:
     # Fog-of-war enforced at the query level, not by the frontend choosing
     # not to render: 'folded' children never leave the database, so the
     # unrevealed scope of a loop is physically unavailable to the client.
@@ -89,10 +118,11 @@ def list_notes(db: Session = Depends(get_db)) -> List[NoteOut]:
     notes = (
         db.query(Note)
         .filter(
+            Note.device_id == device_id,
             or_(
                 Note.parent_id.is_(None),
                 Note.status.in_([NoteStatus.active, NoteStatus.done]),
-            )
+            ),
         )
         .order_by(Note.created_at.asc())
         .all()
@@ -161,14 +191,16 @@ def _run_decompose(db: Session, note: Note) -> DecomposeProposal:
 
 
 @router.post("/{note_id}/decompose", response_model=DecomposeProposal)
-def decompose_note(note_id: UUID, db: Session = Depends(get_db)) -> DecomposeProposal:
+def decompose_note(
+    note_id: UUID,
+    db: Session = Depends(get_db),
+    device_id: str = Depends(get_device_id),
+) -> DecomposeProposal:
     """Propose a step breakdown (or a skip) for a note without creating
     anything — the AI touchpoint of the Loop design overlay. Side-effect
     free: retry it freely, ignore it and type your own. See docs/IA.md.
     """
-    note = db.get(Note, str(note_id))
-    if note is None:
-        raise HTTPException(status_code=404, detail="note not found")
+    note = _get_owned(db, note_id, device_id)
 
     existing_child = db.query(Note.id).filter(Note.parent_id == note.id).first()
     if existing_child is not None:
@@ -194,6 +226,7 @@ def _crack_open(
     # app/models.py) preserves the submitted step order.
     children = [
         Note(
+            device_id=note.device_id,
             kind=NoteKind.loop,
             parent_id=note.id,
             text=step_text,
@@ -219,14 +252,15 @@ def _crack_open(
 
 @router.patch("/{note_id}/crack-open", response_model=CrackOpenResponse)
 def crack_open(
-    note_id: UUID, payload: CrackOpenRequest, db: Session = Depends(get_db)
+    note_id: UUID,
+    payload: CrackOpenRequest,
+    db: Session = Depends(get_db),
+    device_id: str = Depends(get_device_id),
 ) -> CrackOpenResponse:
     """Commit the Loop design overlay: the note becomes a loop and moves to
     Open loops with its first step live. Scope collapses here — only the
     active step is visible afterward. See docs/IA.md ("Loop design")."""
-    note = db.get(Note, str(note_id))
-    if note is None:
-        raise HTTPException(status_code=404, detail="note not found")
+    note = _get_owned(db, note_id, device_id)
 
     existing_child = db.query(Note.id).filter(Note.parent_id == note.id).first()
     if existing_child is not None:
@@ -312,6 +346,7 @@ def _regenerate_recurring(db: Session, loop: Note) -> None:
 
     now = datetime.utcnow()
     nxt = Note(
+        device_id=loop.device_id,
         text=loop.text,
         x=loop.x,
         y=loop.y,
@@ -325,6 +360,7 @@ def _regenerate_recurring(db: Session, loop: Note) -> None:
 
     children = [
         Note(
+            device_id=loop.device_id,
             kind=NoteKind.loop,
             parent_id=nxt.id,
             text=text,
@@ -341,13 +377,15 @@ def _regenerate_recurring(db: Session, loop: Note) -> None:
 
 
 @router.patch("/{note_id}/complete", response_model=CompleteResponse)
-def complete_note(note_id: UUID, db: Session = Depends(get_db)) -> CompleteResponse:
+def complete_note(
+    note_id: UUID,
+    db: Session = Depends(get_db),
+    device_id: str = Depends(get_device_id),
+) -> CompleteResponse:
     """Mark the active step done and advance the loop: promote the next
     step, or — if this was the last — close the loop (it moves to Closed
     loops). See docs/IA.md ("Open loops")."""
-    note = db.get(Note, str(note_id))
-    if note is None:
-        raise HTTPException(status_code=404, detail="note not found")
+    note = _get_owned(db, note_id, device_id)
     if note.status == NoteStatus.done:
         raise HTTPException(status_code=400, detail="note already done")
 
@@ -397,12 +435,14 @@ def complete_note(note_id: UUID, db: Session = Depends(get_db)) -> CompleteRespo
 
 
 @router.delete("/{note_id}", status_code=204)
-def delete_note(note_id: UUID, db: Session = Depends(get_db)) -> None:
+def delete_note(
+    note_id: UUID,
+    db: Session = Depends(get_db),
+    device_id: str = Depends(get_device_id),
+) -> None:
     """Permanently delete a note and, via ON DELETE CASCADE, its children.
     Serves deleting a raw brain-dump line or discarding a loop."""
-    note = db.get(Note, str(note_id))
-    if note is None:
-        raise HTTPException(status_code=404, detail="note not found")
+    note = _get_owned(db, note_id, device_id)
 
     db.delete(note)
     db.commit()

@@ -43,6 +43,11 @@ class Note(Base):
     # SQLite has no native UUID type, so ids are UUIDs generated in
     # application code and stored as text — see docs/DECISIONS.md.
     id = sa.Column(sa.String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    # Anonymous per-device owner. Generated client-side and sent on every
+    # request (X-Device-Id header); the backend scopes every read and
+    # write to it so two devices get separate private sets, with no auth.
+    # See docs/DECISIONS.md ("Per-device isolation").
+    device_id = sa.Column(sa.String, nullable=False, index=True)
     parent_id = sa.Column(
         sa.String, sa.ForeignKey("notes.id", ondelete="CASCADE"), nullable=True
     )
@@ -76,3 +81,4 @@ class Note(Base):
 
 sa.Index("notes_parent_id_idx", Note.parent_id)
 sa.Index("notes_parent_id_status_idx", Note.parent_id, Note.status)
+sa.Index("notes_device_id_idx", Note.device_id)
