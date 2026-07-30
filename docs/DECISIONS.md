@@ -2040,6 +2040,44 @@ hard reload):**
 (fixed). Minor cosmetic: a note dragged hard against the right edge
 wraps narrowly — freeform/user-placed, not a defect.
 
+## 2026-07-30 — "crack this open" affordance + first-run signposting + edge clamp
+
+Improved the Brain-dump → loop invitation and first-timer legibility;
+frontend-only, deployed to production (`vercel --prod`, no backend
+change).
+
+- **"crack this open"** replaces "make a loop". Always visible under its
+  line (was a faint 10px mono label), in the DESIGN.md UI voice, with the
+  same loop-mark glyph a folded loop uses in Open loops — so a line
+  visibly becomes a loop. Muted by default, inks up to the wet-ink accent
+  on hover/focus. Mechanic unchanged: it opens the Loop design overlay.
+- **Open-loops reveal signposting:** a quiet "rub to reveal" hint beside
+  the folded mark (the mark alone didn't read as interactive), shown only
+  until the user develops their first step ever (localStorage
+  `ol.developedOnce`), then gone. DESIGN.md sanctions exactly this — "a
+  single quiet imperative in muted ink" where a hint is unavoidable.
+- **Edge clamp (the flagged cosmetic fix):** notes now have a fixed width
+  (narrower on ≤480px) and are clamped in JS so their whole box stays on
+  the paper — they can't be dragged off an edge or squeezed into an
+  awkward shrink-to-fit wrap (the wrap was absolute-positioning
+  shrink-to-fit using `containing-block-width − left`).
+
+Root-caused the earlier edge wrap: an absolutely-positioned note near the
+right edge got a tiny shrink-to-fit width. Fixed by a fixed width +
+position clamp.
+
+**Verified on the live URL (desktop + mobile, fresh device, hard
+reload), all PASS:** cold-start first-run; "crack this open" opens the
+overlay (Groq proposed full steps; Repeats all 5 options, usable on
+mobile); Brain dump stays raw-lines-only with no step leak; freeform
+write (double-click / tap) + drag with persistence and clamp (create &
+drag to the far edge stay on paper, no wrap); drag-note vs swipe-surface
+don't conflict on touch; Open loops shows only the current step with the
+"rub to reveal" hint, rub develops → Done → next → close to Closed loops,
+and the hint retires after the first develop; recurrence (Daily → closed
+`↻ daily`, next hidden); per-device isolation; no console errors. Only
+the frontend was redeployed; the live URL serves the new build.
+
 ## Open items / known incomplete for v1
 
 > **Superseded by the 2026-07-30 Phase 2 collapse:** every item below
