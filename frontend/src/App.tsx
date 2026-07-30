@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { createNote, listNotes, subscribeBusy } from "./api";
+import { completeNote, crackOpen, createNote, listNotes, subscribeBusy } from "./api";
 import { BrainDump } from "./BrainDump";
 import { ClosedLoops } from "./ClosedLoops";
 import { LoopDesign } from "./LoopDesign";
@@ -124,6 +124,31 @@ export default function App() {
     }
   }
 
+  // Commit the Loop design overlay: the raw line becomes a loop and moves
+  // to Open loops with its first step live. Scope collapses; we follow
+  // the item to its new surface so the transition is legible.
+  async function handleOpenLoop(noteId: string, steps: string[]) {
+    try {
+      await crackOpen(noteId, steps);
+      setDesigningId(null);
+      await refresh();
+      goTo(1);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  // Mark the live step done — the loop advances (next step) or closes
+  // (moves to Closed loops).
+  async function handleComplete(stepId: string) {
+    try {
+      await completeNote(stepId);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
   const dumpLines = notes.filter((n) => n.parent_id === null && n.kind === "plain");
   const openLoops = notes.filter(
     (n) => n.parent_id === null && n.kind === "loop" && n.status !== "done"
@@ -180,7 +205,7 @@ export default function App() {
             />
           </section>
           <section className="page" aria-hidden={page !== 1}>
-            <OpenLoops loops={openLoops} stepFor={stepFor} />
+            <OpenLoops loops={openLoops} stepFor={stepFor} onComplete={handleComplete} />
           </section>
           <section className="page" aria-hidden={page !== 2}>
             <ClosedLoops loops={closedLoops} />
@@ -188,7 +213,14 @@ export default function App() {
         </div>
       </div>
 
-      {designing && <LoopDesign note={designing} onClose={() => setDesigningId(null)} />}
+      {designing && (
+        <LoopDesign
+          note={designing}
+          onOpenLoop={(steps) => handleOpenLoop(designing.id, steps)}
+          onClose={() => setDesigningId(null)}
+          onError={setError}
+        />
+      )}
 
       {showBusy && (
         <div className="busy" role="status" aria-live="polite">

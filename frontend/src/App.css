@@ -185,13 +185,39 @@
   color: var(--ink);
 }
 
+/* Crack-open affordance — the functional stand-in for the ink-develop
+   signature (tuned interaction lands in the polish phase). */
+.loop__crack {
+  margin-top: var(--space-3);
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.loop__live {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+}
+
 .loop__step {
-  margin: var(--space-2) 0 0;
+  margin: 0;
   font-family: var(--font-display);
   font-style: italic;
   font-size: 18px;
   line-height: 1.4;
   color: var(--accent);
+}
+
+.loop__done {
+  flex: none;
 }
 
 /* Closed loops — the quietest surface: a low-contrast record. */
@@ -269,8 +295,69 @@
   color: var(--ink);
 }
 
-.overlay__steps {
-  min-height: var(--space-6);
+.overlay__skip {
+  margin: 0 0 var(--space-4);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--ink-muted);
+}
+
+/* Editable step list — the drafting annotation ordinals in mono. */
+.steps {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+}
+
+.steps__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.steps__ord {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-muted);
+}
+
+.steps__input {
+  flex: 1;
+  padding: var(--space-2) 0;
+  border: none;
+  background: transparent;
+  font: 15px/1.5 var(--font-ui);
+  color: var(--ink);
+}
+
+.steps__input::placeholder {
+  color: var(--ink-muted);
+}
+
+.steps__remove {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--ink-muted);
+}
+
+.steps__tools {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.page__empty--tight {
+  margin: var(--space-4) 0;
+  font-size: 16px;
 }
 
 .overlay__actions {
@@ -301,6 +388,18 @@
   background: transparent;
   border-color: var(--hairline);
   color: var(--ink);
+}
+
+.btn--text {
+  padding: var(--space-2) 0;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* The "working" indicator — a quiet pill, bottom-center. */
