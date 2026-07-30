@@ -1709,7 +1709,110 @@ down-alert, explicitly not keep-warm — Railway doesn't sleep it).
     tighter external check to a chosen address, UptimeRobot's free tier
     (5-min checks) is the manual add-on — steps handed to the owner.
 
+## 2026-07-30 — Phase 2 rebuild: collapse to the single Ink flow + the four-stage structure
+
+Professional rebuild, Phase 2 (first code changes). Built strictly to
+the approved `docs/DESIGN.md` (Phase 0) and `docs/IA.md` (Phase 1). This
+narrows the 4-mechanic prototype to one product: a notebook of loops
+governed by fog-of-war, navigated as the four-stage flow Brain dump ->
+Loop design -> Open loops -> Closed loops. Landed as three live-tested
+commits (removal, nav shell, transitions).
+
+**Removed (mechanics + dead code).** The version gallery and page tabs;
+the v1 companion-chat page entirely (thread, step-by-step messaging,
+free-text summary bypass); v3 dice; v4 fade. On the backend: deleted
+`routes/threads.py` and the whole `messages` table/model + enums;
+removed from `routes/notes.py` the companion/nudge system — Feature B
+(peek/keep/stale detection), Feature C (merge detection, link,
+completion cascade), the ambient backlog-pressure tone hints, input
+classification, and all thread-message writing. What survives is the
+core state machine the Ink flow needs: create, decompose (now a strict
+proposer, below), crack-open, sibling promotion, parent auto-complete,
+delete.
+
+**AI is now one strict touchpoint.** Per IA.md, AI appears only in Loop
+design, as a functional step-proposer. `DECOMPOSE_SYSTEM_PROMPT` was
+rewritten from the "text a friend, lmk when done" companion voice to
+plain imperative steps ("Reread the brief") with an explicit "no
+persona, no first person" instruction. `POST /notes/{id}/decompose` is
+unchanged in contract (side-effect-free preview); the overlay commits
+the edited list via the existing `crack-open`. Brain dump has no AI at
+all (the old classify/whisper is gone) — capture stays silent.
+
+**Schema reset required (no in-place migration).** `models.py` dropped
+the now-dead columns (`task_like`, `peek_count`, `last_peeked_at`,
+`linked_note_id`) and the `Message` model. Consistent with the standing
+"no migration tooling" item, this needs a fresh schema, not an ALTER:
+the local `openloops.db` was deleted and recreated by
+`Base.metadata.create_all`; **production Postgres must be dropped and
+recreated on the next deploy** (its old rows carry companion
+threads/messages that don't fit the new model, and the dropped NOT NULL
+columns would otherwise break inserts). Demo seed content is rewritten
+live, as before. `NoteOut` is now
+`id/parent_id/text/x/y/status/kind/created_at`.
+
+**`kind` (plain|loop) becomes the spine.** A top-level `plain` note is a
+raw Brain dump line; it becomes a `loop` only when designed (crack-open
+flips it). The three surfaces filter purely on this + status: dump =
+plain top-level; open = loop top-level not-done; closed = loop top-level
+done. `x`/`y` columns are retained (default 0) but unused for now — kept
+so a later phase can restore user-placed marks without a schema change.
+
+**Navigation: three paged surfaces + a transient overlay** (IA.md's
+recommendation, implemented). Open loops is home; Brain dump one swipe
+left, Closed one swipe right. Paging by a pointer-gesture with an axis
+lock (horizontal = page swipe, vertical = let the surface scroll — never
+hijacked), desktop arrow keys (suppressed while typing or when the
+overlay is open), and a clickable three-dot marker (the only global
+chrome). Loop design is a modal overlay, not a fourth page, so full
+scope is seen once and dismissed.
+
+**Where DESIGN.md / IA.md didn't fully survive contact with the code
+(flagged for the owner's review):**
+- **Open loops is app-arranged, not user-draggable.** IA.md describes
+  loop-marks "placed freely on the page." Freeform drag conflicts with
+  the horizontal page-swipe on touch (the public-mobile-validation
+  target), and positions were never persisted anyway. For now the
+  surface arranges marks itself; user placement is deferred pending the
+  owner's call. This is the one real tension between IA.md and the
+  mobile nav.
+- **The ink-develop signature is a functional stand-in, by instruction.**
+  The brief said not to build the final Ink interaction polish this
+  phase. Cracking a loop open currently reveals its already-active step
+  via a simple click affordance (fog of war still holds — the step is
+  hidden until you choose to crack). The tuned reveal from DESIGN.md
+  §5–6 / IA.md (rub / press-and-hold-to-develop, blur-out/opacity-in
+  curves, haptics, partial-smudge) is the next phase's work.
+- **Recurrence is not built.** IA.md places recurrence in Loop design
+  with regeneration into Open loops at interval. That needs a data-model
+  change (a recurrence field + a scheduler) beyond this phase's "collapse
+  + nav shell" scope, so it was left out rather than half-built. No
+  Repeats control is shown yet.
+- **Fonts load via Google Fonts, not self-hosted.** DESIGN.md prefers
+  self-hosted woff2; it also names Google Fonts the acceptable quick
+  path for early Phase 1. Self-hosting is a later optimization.
+
+**Not touched, per brief:** no auth, no per-device isolation, data left
+as-is (schema reset aside). CORS allowlist, deploy config, health/uptime
+all unchanged.
+
 ## Open items / known incomplete for v1
+
+> **Superseded by the 2026-07-30 Phase 2 collapse:** every item below
+> that references the companion chat thread, Feature B (peek/stale), or
+> Feature C (merge/link) is moot — that code was removed. Kept for
+> history per the append-only convention; do not treat them as live.
+
+New Phase 2 open items:
+- Open loops uses app-arranged marks, not user-placed (drag-vs-swipe
+  conflict). Revisit once the owner decides on placement.
+- The tuned ink-develop reveal interaction is not built yet (functional
+  click-to-crack stands in).
+- Recurrence (set in Loop design, regenerate at interval) is not built.
+- Production Postgres needs a drop+recreate on next deploy (schema
+  reset, no in-place migration).
+
+### Original v1 open items (pre-Phase-2)
 
 - No auth: all requests operate against a single hardcoded demo user
   concept. Do not add a `users` table or auth middleware for v1 — explicitly
