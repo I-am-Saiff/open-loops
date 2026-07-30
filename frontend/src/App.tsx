@@ -168,7 +168,9 @@ export default function App() {
     try {
       await updatePosition(id, x, y);
     } catch (err) {
-      setError((err as Error).message);
+      // A failed position save is minor — the note has already moved
+      // locally. Don't throw a full error bar over the whole page for it.
+      console.warn("could not persist note position", err);
     }
   }
 
