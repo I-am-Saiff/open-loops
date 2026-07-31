@@ -113,8 +113,14 @@ export default function App() {
   // Touch/drag paging with an axis lock. Undecided until the pointer
   // moves past AXIS_LOCK_PX, then commits to horizontal (page swipe) or
   // vertical (let the surface scroll, we bow out).
+  //
+  // Always record the start point, even while the develop lock is on:
+  // a touch on a folded ink mark locks the pager immediately (InkReveal),
+  // and if it turns out to be a swipe the lock releases mid-gesture — the
+  // pager must be able to take over from the ORIGINAL start point, or
+  // swipes that start on a mark die. Movement is gated in onPointerMove.
   function onPointerDown(e: ReactPointerEvent) {
-    if (designingId || developLockRef.current) return;
+    if (designingId) return;
     if (e.pointerType === "mouse") return; // mouse uses arrows / the marker
     gestureRef.current = { startX: e.clientX, startY: e.clientY, axis: "" };
   }

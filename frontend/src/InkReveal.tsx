@@ -21,10 +21,14 @@ const HOLD_MS_MOUSE = 700;
 const HOLD_MS_TOUCH = 1000;
 const MAX_BLUR_PX = 7;
 const MIN_OPACITY = 0.22;
-// Touch only: a hold must survive this before it develops, so a fast
-// horizontal page-swipe fling that grazes the mark doesn't trigger it.
+// Touch only: a hold must survive this before it develops, so a stray
+// brush over the mark doesn't trigger it. The cancel threshold separates
+// a fling (which hands the gesture to the pager) from a press: a real
+// thumb settling into a press — even one that starts rubbing right away —
+// stays well under 24px in 90ms (~270px/s), while a genuine page fling
+// runs an order of magnitude faster.
 const ARM_DELAY_MS = 90;
-const ARM_CANCEL_PX = 10;
+const ARM_CANCEL_PX = 24;
 
 // Blur out, opacity in — deliberately opposite curves (DESIGN.md §5).
 function easeOutQuad(t: number): number {
@@ -88,6 +92,13 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
   const startedHapticRef = useRef(false);
   const rootRef = useRef<HTMLButtonElement>(null);
   const docGuardRef = useRef<((e: TouchEvent) => void) | null>(null);
+  // The single pointer that owns the gesture — a stray second finger must
+  // not add rub travel, restart the hold, or end the develop.
+  const pointerIdRef = useRef<number | null>(null);
+  // One-shot document release installed by finish(): the reveal swaps the
+  // button out while the finger is still down, so the button's own
+  // pointerup never fires — the locks must release at the actual lift.
+  const liftReleaseRef = useRef<(() => void) | null>(null);
 
   // REAL-iOS scroll lock. CSS touch-action + React pointer events are not
   // enough on iOS Safari: React's root-attached touch listeners are
@@ -99,8 +110,9 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
   // preventDefault()s the gesture before a scroll ever starts.
   //
   // Swipes still pass through: pointermove fires before the matching
-  // touchmove, so a fast flick cancels the arm first and its touchmove is
-  // NOT prevented — native list scrolling and page swipes keep working.
+  // touchmove, so a fast flick cancels the arm (and unlocks the pager)
+  // first and its touchmove is NOT prevented — the pager, which armed on
+  // the same pointerdown, takes the gesture over and turns the page.
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
@@ -135,6 +147,7 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       if (armTimerRef.current) window.clearTimeout(armTimerRef.current);
+      if (liftReleaseRef.current) liftReleaseRef.current();
       removeDocGuard();
       lockPager(false);
     };
@@ -184,8 +197,23 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
     setRevealed(true);
     markDevelopedOnce();
     haptic(24); // medium — legible
-    // The pager stays locked until the pointer actually lifts (onPointerUp),
-    // so trailing movement after a mid-rub finish can't be read as a swipe.
+    // setRevealed swaps this button out of the tree while the finger is
+    // still down, so the button's own pointerup will NEVER fire. Without
+    // an explicit release the document guard and pager lock stay stuck —
+    // the whole app frozen for touch until the next remount. Release at
+    // the actual lift via a one-shot document listener (capture, so it
+    // runs before anything else sees the pointerup); trailing movement
+    // stays swallowed until then, keeping the page still to the end.
+    const release = () => {
+      liftReleaseRef.current = null;
+      document.removeEventListener("pointerup", release, true);
+      document.removeEventListener("pointercancel", release, true);
+      lockPager(false);
+      removeDocGuard();
+    };
+    liftReleaseRef.current = release;
+    document.addEventListener("pointerup", release, true);
+    document.addEventListener("pointercancel", release, true);
   }
 
   function stopWithoutReveal() {
@@ -208,6 +236,11 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
 
   function onPointerDown(e: ReactPointerEvent) {
     if (revealed) return;
+    // One pointer owns the gesture. A second finger landing on the row
+    // must not restart the hold, overwrite the rub anchors, or later end
+    // the develop when it lifts.
+    if (pointerIdRef.current !== null) return;
+    pointerIdRef.current = e.pointerId;
     holdMsRef.current = e.pointerType === "touch" ? HOLD_MS_TOUCH : HOLD_MS_MOUSE;
     try {
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -217,9 +250,17 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
     const pt = { x: e.clientX, y: e.clientY };
     downPtRef.current = pt;
     lastPtRef.current = pt;
-    // Reduced motion: no develop animation — a tap reveals on release.
+    // Reduced motion: no develop gesture — a plain tap reveals on release
+    // (guarded against swipes in onPointerUp). No lock, so swipes page.
     if (prefersReduced) return;
     if (e.pointerType === "touch") {
+      // Lock the pager NOW, not at arm-fire: the pointerdown continues to
+      // bubble (no stopPropagation), so the pager records its own start
+      // point but is held from acting. If the arm cancels (the finger is
+      // swiping, not pressing), we unlock and the pager takes over from
+      // its original start point — a seamless handoff, so flicks that
+      // start on this row still turn the page instead of dying.
+      lockPager(true);
       armTimerRef.current = window.setTimeout(beginDevelop, ARM_DELAY_MS);
     } else {
       beginDevelop();
@@ -227,13 +268,16 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
   }
 
   function onPointerMove(e: ReactPointerEvent) {
+    if (e.pointerId !== pointerIdRef.current) return;
     const pt = { x: e.clientX, y: e.clientY };
-    // Before a hold commits, a large move means a swipe — cancel the arm.
+    // Before a hold commits, a large move means a swipe — cancel the arm
+    // and hand the gesture back to the pager (unlock).
     if (armTimerRef.current && downPtRef.current) {
       const d = Math.hypot(pt.x - downPtRef.current.x, pt.y - downPtRef.current.y);
       if (d > ARM_CANCEL_PX) {
         window.clearTimeout(armTimerRef.current);
         armTimerRef.current = undefined;
+        lockPager(false);
         return;
       }
     }
@@ -248,16 +292,23 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
     lastPtRef.current = pt;
   }
 
-  function onPointerUp() {
+  function onPointerUp(e: ReactPointerEvent) {
+    if (e.pointerId !== pointerIdRef.current) return;
+    pointerIdRef.current = null;
     if (armTimerRef.current) {
       window.clearTimeout(armTimerRef.current);
       armTimerRef.current = undefined;
     }
-    // Reduced motion: a tap reveals on release. Otherwise a release
-    // before full leaves a partial smudge.
+    // Reduced motion: a TAP reveals on release — a swipe (which the pager
+    // is free to page, since we never locked) must not.
     if (!revealed) {
-      if (prefersReduced) revealInstantly();
-      else stopWithoutReveal();
+      if (prefersReduced) {
+        const down = downPtRef.current;
+        const moved = down ? Math.hypot(e.clientX - down.x, e.clientY - down.y) : 0;
+        if (moved <= ARM_CANCEL_PX) revealInstantly();
+      } else {
+        stopWithoutReveal();
+      }
     }
     // Always release the pager and the document freeze on lift.
     lockPager(false);

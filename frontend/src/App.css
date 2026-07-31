@@ -4,6 +4,9 @@
 
 .app {
   height: 100vh;
+  /* iOS Safari: track the dynamic viewport so the toolbar showing/hiding
+     never causes a layout jump mid-gesture. */
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -16,21 +19,34 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: var(--space-2);
   height: var(--space-8);
 }
 
+/* Each dot is a small visual mark on a 44px touch target. */
 .marker__dot {
-  width: 7px;
-  height: 7px;
+  position: relative;
+  width: 32px;
+  height: 44px;
   padding: 0;
   border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.marker__dot::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  transform: translate(-50%, -50%);
   border-radius: 50%;
   background: var(--hairline);
   transition: background var(--dur-base) var(--ease-standard);
 }
 
-.marker__dot--current {
+.marker__dot--current::after {
   background: var(--ink);
 }
 
@@ -244,8 +260,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: var(--space-1);
-  padding: 0;
+  min-height: 40px; /* generous touch target without crowding the canvas */
+  padding: var(--space-1) var(--space-2) var(--space-1) 0;
   border: none;
   background: transparent;
   font-family: var(--font-ui);
@@ -464,35 +480,67 @@
   color: var(--ink-muted);
 }
 
-/* Loop design overlay. */
+/* Loop design overlay — the crack-open moment, made visible once. The
+   panel belongs to the ink world: the loop-mark unspools at the top, its
+   thread runs down the margin connecting the steps, the title dries from
+   wet ink, and the rows rise in with a small stagger. Function is plain:
+   full steps for review/edit, Repeats, Open loop. */
 .overlay {
   position: fixed;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-5);
+  padding: var(--space-4);
   z-index: 10;
 }
 
 .overlay__backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(23, 23, 26, 0.28);
+  /* An ink wash, not a gray scrim. */
+  background: rgba(23, 23, 26, 0.3);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  animation: backdrop-in var(--dur-base) var(--ease-standard) both;
 }
 
 .overlay__panel {
   position: relative;
   width: 100%;
-  max-width: 460px;
+  max-width: 500px;
+  max-height: min(680px, calc(100dvh - var(--space-6)));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: var(--space-6);
   background: var(--surface);
   border-radius: var(--radius-modal);
   box-shadow: var(--shadow-live);
+  animation: overlay-rise var(--dur-settle) var(--ease-develop) both;
+}
+
+.overlay__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+}
+
+/* The loop-mark, unspooling — its stroke draws itself open as the panel
+   lands. Boldness within the motion budget: one moment, once. */
+.overlay__mark {
+  display: inline-flex;
+  color: var(--ink-muted);
+}
+
+.overlay__mark-path {
+  stroke-dasharray: 60;
+  stroke-dashoffset: 60;
+  animation: mark-unspool var(--dur-slow) var(--ease-develop) 120ms forwards;
 }
 
 .overlay__eyebrow {
-  margin: 0 0 var(--space-2);
+  margin: 0;
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.08em;
@@ -508,6 +556,9 @@
   line-height: 1.2;
   letter-spacing: -0.005em;
   color: var(--ink);
+  overflow-wrap: break-word;
+  /* No entrance of its own — it rides the panel. The wet-ink accent
+     belongs to the live step (DESIGN.md §2), not a static header. */
 }
 
 .overlay__skip {
@@ -517,23 +568,43 @@
   color: var(--ink-muted);
 }
 
-/* Editable step list — the drafting annotation ordinals in mono. */
+/* Editable step list. The unspooled thread runs down the margin, through
+   the mono ordinals — the loop, laid out on one string. */
 .steps {
+  position: relative;
   list-style: none;
   margin: 0 0 var(--space-3);
   padding: 0;
 }
 
+/* The unspooled thread: one continuous line down the left margin, the
+   ordinals beside it — the loop, laid out on a single string. */
+.steps::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: var(--space-2);
+  bottom: var(--space-2);
+  width: 1px;
+  background: var(--hairline);
+}
+
+/* Rows have no entrance of their own — they ride the panel's single
+   rise. (A per-row stagger re-fires on every list mutation and leaves a
+   freshly added row invisible through its delay — and §5's budget allows
+   one orchestrated moment here, not a cascade.) */
 .steps__row {
+  position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-3);
-  padding: var(--space-1) 0;
+  padding: var(--space-1) 0 var(--space-1) var(--space-3);
   border-bottom: 1px solid var(--hairline);
 }
 
 .steps__ord {
   flex: none;
+  padding: 14px 0;
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.08em;
@@ -542,11 +613,15 @@
 
 .steps__input {
   flex: 1;
-  padding: var(--space-2) 0;
+  min-height: 44px;
+  padding: 11px 0;
   border: none;
   background: transparent;
   font: 15px/1.5 var(--font-ui);
   color: var(--ink);
+  resize: none;
+  overflow: hidden;
+  overflow-wrap: break-word;
 }
 
 .steps__input::placeholder {
@@ -555,8 +630,9 @@
 
 .steps__remove {
   flex: none;
-  width: 24px;
-  height: 24px;
+  width: 44px;
+  height: 44px;
+  margin-right: calc(-1 * var(--space-3));
   padding: 0;
   border: none;
   background: transparent;
@@ -570,6 +646,43 @@
   gap: var(--space-4);
 }
 
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes overlay-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mark-unspool {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay__backdrop,
+  .overlay__panel {
+    animation: none;
+  }
+  .overlay__mark-path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
 .page__empty--tight {
   margin: var(--space-4) 0;
   font-size: 16px;
@@ -578,8 +691,9 @@
 /* Repeats control — set recurrence in Loop design. */
 .repeats {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
   margin-top: var(--space-4);
 }
 
@@ -598,7 +712,8 @@
 }
 
 .repeats__option {
-  padding: var(--space-1) var(--space-2);
+  min-height: 44px; /* comfortable touch target */
+  padding: var(--space-2) var(--space-3);
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   background: transparent;
@@ -629,6 +744,7 @@
 
 /* Buttons — the instrument voice. */
 .btn {
+  min-height: 44px; /* comfortable touch target */
   padding: var(--space-2) var(--space-4);
   border: 1px solid var(--ink);
   border-radius: var(--radius-control);
@@ -718,5 +834,62 @@
   }
   .pager__track {
     transition: none;
+  }
+}
+
+/* ---- Responsive scale (DESIGN.md: same system at every width — the
+   type roles stay fixed; spacing and column widths breathe). ---- */
+
+/* Small phones: tighter gutters so content, not padding, wins. */
+@media (max-width: 380px) {
+  .page__inner {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+  .overlay {
+    padding: var(--space-3);
+  }
+  .overlay__panel {
+    padding: var(--space-5);
+  }
+}
+
+/* Tablet and up: a wider, still-comfortable reading column. */
+@media (min-width: 768px) {
+  .page__inner {
+    max-width: 680px;
+    padding-top: var(--space-4);
+  }
+}
+
+/* Desktop: generous, deliberate — proportional spacing, not stretch. */
+@media (min-width: 1024px) {
+  .page__inner {
+    max-width: 700px;
+    padding-top: var(--space-5);
+  }
+  .loops {
+    gap: var(--space-5);
+  }
+  .loop {
+    padding: var(--space-5) var(--space-6);
+  }
+  .overlay__panel {
+    max-width: 540px;
+    padding: var(--space-7);
+  }
+  .dump__title,
+  .page__title {
+    margin-bottom: var(--space-6);
+  }
+}
+
+/* Wide monitors: the column grows a touch more and breathes. */
+@media (min-width: 1440px) {
+  .page__inner {
+    max-width: 740px;
+  }
+  .marker {
+    height: var(--space-9);
   }
 }

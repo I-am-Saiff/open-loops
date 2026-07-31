@@ -64,6 +64,10 @@ body {
   /* No rubber-band bounce or scroll chaining — on iOS the document-level
      bounce is one of the ways the page "jumps" under a develop hold. */
   overscroll-behavior: none;
+  /* No gray tap flash on iOS — it reads as a flicker/jump mid-gesture. */
+  -webkit-tap-highlight-color: transparent;
+  /* The app never scrolls horizontally, at any width. */
+  overflow-x: hidden;
 }
 
 body {
