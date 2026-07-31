@@ -2121,6 +2121,61 @@ pass-through, note drag vs surface swipe: all re-verified, no
 regressions, no console errors. Final confirmation on the physical
 iPhone is the owner's (checklist handed over in the session report).
 
+## 2026-07-30 — Develop gesture rebuilt (lock/handoff), full responsiveness, crafted overlay
+
+Three-priority pass, adversarially reviewed before deploy (a 20-agent
+workflow over the diff: 4 lenses — iOS touch, regressions, responsive,
+DESIGN.md conformance — each finding verified by a skeptic; 11 confirmed
+findings, all fixed). Frontend-only deploy.
+
+**P1 — the real-iPhone develop jump had a SECOND cause** beyond the
+native-scroll one fixed earlier: the pager armed on any touch
+pointerdown bubbling from the mark, so a real thumb's settling drift
+(>10px inside the 90ms arm window) cancelled the develop and the pager
+dragged the track under the finger. Emulator rubs are unnaturally steady,
+which is why it never reproduced. Fix is a **lock/handoff**, not a dead
+zone: a touch on a folded mark locks the pager instantly; if the arm
+cancels — a genuine fling, >24px in 90ms (~an order of magnitude faster
+than a settling press) — the lock releases and the pager takes over from
+its original start point. Flicks starting on a step row page; presses
+and rubs develop with the page perfectly still.
+- **Critical review catch (my own bug):** a successful touch develop
+  swaps the folded button out while the finger is still down, so its
+  pointerup never fires — the document touchmove guard and pager lock
+  leaked, freezing the whole app for touch until Done. finish() now
+  installs a one-shot document pointerup/pointercancel (capture)
+  release; unmount also releases. Verified: frozen through the trailing
+  movement, freed at the actual lift.
+- pointerId filtering (one pointer owns the gesture); reduced-motion
+  reveals only on a true tap, never a swipe, and doesn't lock.
+
+**P2 — responsive, verified at 360/430/768/1024/1440:** overlay steps
+are auto-growing textareas (long steps wrap — the reported mid-word clip
+is gone; re-measured on resize and after multiline-paste cleanup);
+44px touch targets (marker dots, step remove, Repeats, buttons, reveal
+rows); overlay panel capped at min(680px, 100dvh−gutter) with internal
+scroll; overflow-x hidden globally; reading column scales 640→680→700→
+740 with proportional spacing so desktop reads deliberate.
+
+**P3 — Loop design overlay crafted, then moderated by the review:**
+ink-wash blurred backdrop, one panel rise, the loop-mark drawing itself
+open (--dur-slow — the single flourish, explicitly requested in the
+brief; noted: DESIGN.md's own Chanel-test cut the unspool, the client's
+newer instruction supersedes it here), and a continuous hairline thread
+down the margin through the mono ordinals. Review moderations: no accent
+flash on the static title (§2: accent = live/now only), no per-row
+stagger (§5 budget; it also left a freshly added row invisible through
+its animation delay — a real bug, not just taste), all motion on token
+values. Function unchanged: full steps for review/edit, Repeats, Open
+loop.
+
+Live-verified on the deployed URL (fresh device, mobile viewport):
+cold-start → crack open (Groq, 5 steps, zero clipping, panel fits) →
+press-with-drift develops with the track never moving, frozen till lift,
+freed after → flick-on-row pages → Done advances. No console errors.
+Physical-iPhone confirmation remains the owner's (checklist in the
+session report).
+
 ## Open items / known incomplete for v1
 
 > **Superseded by the 2026-07-30 Phase 2 collapse:** every item below
