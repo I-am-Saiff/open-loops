@@ -86,13 +86,59 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
   const armTimerRef = useRef<number | undefined>(undefined);
   const downPtRef = useRef<{ x: number; y: number } | null>(null);
   const startedHapticRef = useRef(false);
+  const rootRef = useRef<HTMLButtonElement>(null);
+  const docGuardRef = useRef<((e: TouchEvent) => void) | null>(null);
+
+  // REAL-iOS scroll lock. CSS touch-action + React pointer events are not
+  // enough on iOS Safari: React's root-attached touch listeners are
+  // passive (preventDefault is a no-op there), and Safari doesn't reliably
+  // honor touch-action:none on a descendant of a scrollable page — so the
+  // thumb's micro-movement starts a native scroll/rubber-band, the layout
+  // shifts, and Safari pointercancels the develop. The only dependable
+  // mechanism is a NATIVE non-passive touchmove listener that
+  // preventDefault()s the gesture before a scroll ever starts.
+  //
+  // Swipes still pass through: pointermove fires before the matching
+  // touchmove, so a fast flick cancels the arm first and its touchmove is
+  // NOT prevented — native list scrolling and page swipes keep working.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    function onNativeTouchMove(e: TouchEvent) {
+      if ((armTimerRef.current !== undefined || activeRef.current) && e.cancelable) {
+        e.preventDefault();
+      }
+    }
+    el.addEventListener("touchmove", onNativeTouchMove, { passive: false });
+    return () => el.removeEventListener("touchmove", onNativeTouchMove);
+    // Re-attach when the folded button remounts (revealed toggles the tree).
+  }, [revealed]);
+
+  // While a develop is actively running, freeze the whole document —
+  // covers a second finger, scroll chaining, and body rubber-banding.
+  // Engaged in beginDevelop, released on pointer lift / unmount.
+  function addDocGuard() {
+    if (docGuardRef.current) return;
+    const guard = (e: TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+    };
+    docGuardRef.current = guard;
+    document.addEventListener("touchmove", guard, { passive: false });
+  }
+  function removeDocGuard() {
+    if (!docGuardRef.current) return;
+    document.removeEventListener("touchmove", docGuardRef.current);
+    docGuardRef.current = null;
+  }
 
   useEffect(() => {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       if (armTimerRef.current) window.clearTimeout(armTimerRef.current);
+      removeDocGuard();
       lockPager(false);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lockPager]);
 
   // Advance progress and reveal when it reaches full. Progress never
@@ -126,6 +172,7 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
       startedHapticRef.current = true;
     }
     lockPager(true);
+    addDocGuard(); // page completely still until the thumb lifts
     rafRef.current = requestAnimationFrame(tick);
   }
 
@@ -212,8 +259,9 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
       if (prefersReduced) revealInstantly();
       else stopWithoutReveal();
     }
-    // Always release the pager on lift, whatever happened above.
+    // Always release the pager and the document freeze on lift.
     lockPager(false);
+    removeDocGuard();
   }
 
   function onKeyDown(e: ReactKeyboardEvent) {
@@ -242,6 +290,7 @@ export function InkReveal({ step, onDone, lockPager }: Props) {
 
   return (
     <button
+      ref={rootRef}
       type="button"
       className={`reveal reveal__target${started ? " reveal--developing" : ""}`}
       aria-label="Reveal next step"

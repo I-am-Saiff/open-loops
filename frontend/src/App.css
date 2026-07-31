@@ -69,6 +69,8 @@
   height: 100%;
   overflow-y: auto;
   scrollbar-width: none;
+  /* A surface's scroll never chains outward into a body bounce. */
+  overscroll-behavior: contain;
 }
 
 .page::-webkit-scrollbar {
@@ -217,6 +219,7 @@
   touch-action: none; /* the note owns its pointer for dragging */
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none; /* no iOS long-press loupe mid-drag */
   cursor: grab;
 }
 
@@ -325,10 +328,15 @@
   background: transparent;
   text-align: left;
   cursor: pointer;
-  /* We own the gesture on touch — no native scroll/zoom steals a develop. */
+  /* We own the gesture on touch — no native scroll/zoom steals a develop.
+     touch-action is advisory on iOS inside a scrollable ancestor; the real
+     lock is InkReveal's native non-passive touchmove preventDefault. The
+     touch-callout kill stops the iOS long-press loupe/menu — another
+     source of mid-hold jumping. */
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* Folded state: the closed ink loop-mark that unspools on press. */

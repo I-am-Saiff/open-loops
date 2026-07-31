@@ -59,6 +59,13 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  /* No rubber-band bounce or scroll chaining — on iOS the document-level
+     bounce is one of the ways the page "jumps" under a develop hold. */
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
 }

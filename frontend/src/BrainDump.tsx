@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
@@ -36,6 +36,20 @@ export function BrainDump({ notes, onAdd, onMakeLoop, onMove }: Props) {
   // from a page-swipe so the two never conflict.
   const tapRef = useRef<{ x: number; y: number; t: number } | null>(null);
 
+  // REAL-iOS scroll lock while dragging a note: same failure mode as the
+  // ink develop — CSS touch-action alone isn't reliably honored by iOS
+  // Safari, and React's touch listeners are passive. One native
+  // non-passive document listener, active only while a drag is live, so
+  // the page can't scroll/rubber-band under a dragged note. Swipes on
+  // empty paper never enter dragRef, so they're untouched.
+  useEffect(() => {
+    function onNativeTouchMove(e: TouchEvent) {
+      if (dragRef.current && e.cancelable) e.preventDefault();
+    }
+    document.addEventListener("touchmove", onNativeTouchMove, { passive: false });
+    return () => document.removeEventListener("touchmove", onNativeTouchMove);
+  }, []);
+
   function toCanvas(clientX: number, clientY: number): { x: number; y: number } {
     const r = canvasRef.current?.getBoundingClientRect();
     if (!r) return { x: clientX, y: clientY };
@@ -47,7 +61,10 @@ export function BrainDump({ notes, onAdd, onMakeLoop, onMove }: Props) {
   // stays inside the canvas.
   function clamp(x: number, y: number, w: number, h: number): { x: number; y: number } {
     const c = canvasRef.current;
-    if (!c) return { x, y };
+    // A canvas with no measured size (mid-layout, hidden pane) can't
+    // clamp meaningfully — leave the position untouched rather than
+    // collapsing everything to 0,0.
+    if (!c || c.clientWidth === 0 || c.clientHeight === 0) return { x, y };
     return {
       x: Math.min(Math.max(0, x), Math.max(0, c.clientWidth - w)),
       y: Math.min(Math.max(0, y), Math.max(0, c.clientHeight - h)),
