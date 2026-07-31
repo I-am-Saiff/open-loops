@@ -2078,6 +2078,49 @@ and the hint retires after the first develop; recurrence (Daily → closed
 `↻ daily`, next hidden); per-device isolation; no console errors. Only
 the frontend was redeployed; the live URL serves the new build.
 
+## 2026-07-30 — Real-iOS develop fix: native non-passive touch lock
+
+Confirmed on a physical iPhone (not reproducible in emulators): during a
+develop hold/rub the whole page shifted and jumped. Root cause: the
+scroll lock relied on CSS `touch-action` + React pointer events only.
+Two real-device facts break that: (1) React attaches its touch
+listeners **passively** at the root, so nothing in a React handler can
+`preventDefault()` a native `touchmove`; (2) iOS Safari does not
+reliably honor `touch-action: none` on a descendant of a scrollable
+surface (`.page` scrolls, `.pager` allows pan-y). So the thumb's
+micro-movement started a native scroll/rubber-band, the layout moved
+under the finger, and Safari fired `pointercancel` — the stutter.
+Emulators (desktop engines) honor `touch-action` strictly, hence no
+repro there; noted as a standing lesson: emulator touch is not
+sufficient to validate iOS gesture code.
+
+The fix works at the browser level, deployed frontend-only:
+- **Native non-passive `touchmove` on the mark** (attached via ref with
+  `{passive:false}`): while the gesture is armed (the 90ms window) or
+  actively developing, it `preventDefault()`s — Safari never gets to
+  start a scroll. Swipes pass through by event ordering: `pointermove`
+  fires before the matching `touchmove`, so a fast flick cancels the arm
+  first and its touchmove is NOT prevented.
+- **Document-level non-passive guard during an active develop**: from
+  the instant the hold commits until the thumb lifts, every touchmove on
+  the document is prevented — second finger, scroll chaining, body
+  rubber-band. Released on pointerup and unmount.
+- **`overscroll-behavior: none`** on html/body, `contain` on `.page`;
+  **`-webkit-touch-callout: none`** on the mark and dump notes (the iOS
+  long-press loupe/menu was another possible jump source).
+- **Brain dump note drags** get the same document guard while a drag is
+  live (same latent failure).
+- Clamp hardened: a zero-measured canvas no longer collapses positions
+  to 0,0 (found via a harness pane glitch, guarded regardless).
+
+Verified with real cancelable `TouchEvent`s locally AND on the live URL
+in a mobile viewport: idle → not prevented (scrolling free); armed →
+prevented; active develop → document-wide prevented; after lift →
+released. Desktop rub, touch develop + haptic ramp, fast-flick
+pass-through, note drag vs surface swipe: all re-verified, no
+regressions, no console errors. Final confirmation on the physical
+iPhone is the owner's (checklist handed over in the session report).
+
 ## Open items / known incomplete for v1
 
 > **Superseded by the 2026-07-30 Phase 2 collapse:** every item below
