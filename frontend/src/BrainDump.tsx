@@ -80,9 +80,14 @@ export function BrainDump({ notes, onAdd, onMakeLoop, onMove }: Props) {
       // A synthetic/ended pointer can't be captured — harmless.
     }
     const c = toCanvas(e.clientX, e.clientY);
-    dragRef.current = { id: note.id, offX: c.x - note.x, offY: c.y - note.y };
+    // Anchor to the RENDERED position (offsetLeft/Top), not the stored
+    // x/y — a note stored off a wide screen renders clamped on a narrow
+    // one, and anchoring to the stale stored x would freeze it against
+    // the edge. offsetParent is the canvas, so these are canvas-relative.
+    const el = e.currentTarget as HTMLElement;
+    dragRef.current = { id: note.id, offX: c.x - el.offsetLeft, offY: c.y - el.offsetTop };
     setDragId(note.id);
-    setDragPos({ x: note.x, y: note.y });
+    setDragPos({ x: el.offsetLeft, y: el.offsetTop });
   }
   function onDrag(e: ReactPointerEvent) {
     const d = dragRef.current;
@@ -158,7 +163,10 @@ export function BrainDump({ notes, onAdd, onMakeLoop, onMove }: Props) {
             <div
               key={note.id}
               className={`dump-note${dragId === note.id ? " dump-note--dragging" : ""}`}
-              style={{ left: pos.x, top: pos.y }}
+              // The CSS min() keeps a note on-paper at render time too: a
+              // position stored on a wide screen must not clip on a
+              // narrow one (the JS clamp only runs on create/drag).
+              style={{ left: `min(${pos.x}px, calc(100% - var(--note-w)))`, top: pos.y }}
               onPointerDown={(e) => startDrag(e, note)}
               onPointerMove={onDrag}
               onPointerUp={endDrag}

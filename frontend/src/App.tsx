@@ -223,18 +223,46 @@ export default function App() {
 
   return (
     <div className="app">
-      <nav className="marker" aria-label="Surfaces">
-        {PAGES.map((label, i) => (
+      {/* The notebook's constant chrome — the binding, not a navbar. Page
+          markers in the middle; the neighboring pages named quietly at
+          either side, so the structure (and the swipe) is legible at a
+          glance. It never moves while the pages slide beneath it. */}
+      <header className="chrome">
+        {page > 0 ? (
           <button
-            key={label}
             type="button"
-            className={`marker__dot${i === page ? " marker__dot--current" : ""}`}
-            aria-label={label}
-            aria-current={i === page}
-            onClick={() => goTo(i)}
-          />
-        ))}
-      </nav>
+            className="chrome__adjacent chrome__adjacent--prev"
+            onClick={() => goTo(page - 1)}
+          >
+            ‹ {PAGES[page - 1]}
+          </button>
+        ) : (
+          <span />
+        )}
+        <nav className="marker" aria-label="Surfaces">
+          {PAGES.map((label, i) => (
+            <button
+              key={label}
+              type="button"
+              className={`marker__dot${i === page ? " marker__dot--current" : ""}`}
+              aria-label={label}
+              aria-current={i === page}
+              onClick={() => goTo(i)}
+            />
+          ))}
+        </nav>
+        {page < PAGES.length - 1 ? (
+          <button
+            type="button"
+            className="chrome__adjacent chrome__adjacent--next"
+            onClick={() => goTo(page + 1)}
+          >
+            {PAGES[page + 1]} ›
+          </button>
+        ) : (
+          <span />
+        )}
+      </header>
 
       {error && (
         <div className="app__error" onClick={() => setError(null)}>

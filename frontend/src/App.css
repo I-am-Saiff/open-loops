@@ -12,14 +12,81 @@
   overflow: hidden;
 }
 
-/* Page marker — the only global chrome: three ink dots (DESIGN.md's
-   annotation register), current one filled. */
+/* Paper grain — one sheet under everything. A whisper of tooth so the
+   surfaces read as the same physical notebook page, felt rather than
+   noticed (DESIGN.md: texture must never announce itself). Sits above
+   all content as a uniform film, inert to input. */
+.app::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  opacity: 0.04;
+  mix-blend-mode: multiply;
+}
+
+/* The notebook's constant chrome — the binding, not a navbar. Dots stay
+   dead-center; the neighboring pages are named quietly at either side,
+   naming what a swipe reaches. */
+.chrome {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4) 0;
+}
+
+.chrome__adjacent {
+  min-height: 44px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--dur-fast) var(--ease-standard);
+  animation: caption-in var(--dur-base) var(--ease-standard) both;
+}
+
+.chrome__adjacent:hover,
+.chrome__adjacent:focus-visible {
+  color: var(--ink);
+}
+
+.chrome__adjacent--prev {
+  justify-self: start;
+  text-align: left;
+}
+
+.chrome__adjacent--next {
+  justify-self: end;
+  text-align: right;
+}
+
+@keyframes caption-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Page marker — three ink dots (DESIGN.md's annotation register),
+   current one filled. */
 .marker {
   flex: none;
   display: flex;
   justify-content: center;
   align-items: center;
-  height: var(--space-8);
 }
 
 /* Each dot is a small visual mark on a 44px touch target. */
@@ -73,7 +140,9 @@
   display: flex;
   height: 100%;
   width: 300%;
-  transition: transform var(--dur-slow) var(--ease-standard);
+  /* The develop easing gives the slide a paper settle — a page laid
+     down, not a carousel snap. */
+  transition: transform var(--dur-slow) var(--ease-develop);
 }
 
 .pager__track--dragging {
@@ -87,6 +156,13 @@
   scrollbar-width: none;
   /* A surface's scroll never chains outward into a body bounce. */
   overscroll-behavior: contain;
+}
+
+/* The edge between adjacent sheets — invisible at rest, and during a
+   swipe the boundary that passes reads as a page edge, not a screen
+   seam. */
+.page + .page {
+  border-left: 1px solid var(--hairline);
 }
 
 .page::-webkit-scrollbar {
@@ -211,6 +287,8 @@
   /* Horizontal swipe on empty paper reaches the pager (surface change);
      vertical is free. Notes override this to own their drag. */
   touch-action: pan-y;
+  /* One width for every note, readable by the render-time clamp below. */
+  --note-w: 220px;
 }
 
 .dump__empty {
@@ -231,7 +309,7 @@
    JS to stay fully on the paper. */
 .dump-note {
   position: absolute;
-  width: 220px;
+  width: var(--note-w);
   touch-action: none; /* the note owns its pointer for dragging */
   user-select: none;
   -webkit-user-select: none;
@@ -284,7 +362,7 @@
 
 .dump-note__input {
   position: absolute;
-  width: 220px;
+  width: var(--note-w);
   padding: 0 0 2px;
   border: none;
   border-bottom: 1px solid var(--hairline);
@@ -295,9 +373,8 @@
 
 /* Narrower notes on small screens, so freeform placement isn't cramped. */
 @media (max-width: 480px) {
-  .dump-note,
-  .dump-note__input {
-    width: 180px;
+  .dump-canvas {
+    --note-w: 180px;
   }
 }
 
@@ -834,6 +911,9 @@
   }
   .pager__track {
     transition: none;
+  }
+  .chrome__adjacent {
+    animation: none;
   }
 }
 
